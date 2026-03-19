@@ -1,0 +1,54 @@
+name: Sync Release To GitCode
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+      GITCODE_REPO_URL: ${{ vars.GITCODE_REPO_URL }}
+      GITCODE_RELEASE_NAME: ${{ github.event.release.name }}
+      GITCODE_RELEASE_BODY: ${{ github.event.release.body }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Validate release assets directory
+        shell: bash
+        run: |
+          if [ ! -d "release_assets" ]; then
+            echo "release_assets/ directory does not exist." >&2
+            exit 1
+          fi
+
+          if ! find release_assets -maxdepth 1 -type f | grep -q .; then
+            echo "No release files found under release_assets/." >&2
+            exit 1
+          fi
+
+      - name: Validate GitCode configuration
+        shell: bash
+        run: |
+          missing=()
+          for key in GITCODE_TOKEN GITCODE_REPO_URL; do
+            if [ -z "${!key}" ]; then
+              missing+=("$key")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing required GitCode configuration: ${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Upload artifacts to GitCode
+        run: python scripts/upload_to_gitcode.py
