@@ -1,10 +1,17 @@
 """API 密钥安全验证"""
 
 import bcrypt
-from typing import Optional
+from functools import lru_cache
 
 from app.config.settings import settings
 from app.exceptions.errors import MissingAPIKeyError, InvalidAPIKeyError
+
+
+@lru_cache(maxsize=1)
+def _get_api_key_hash_bytes() -> bytes:
+    """缓存 API_KEY_HASH 的 bytes 形式，避免每次请求重复编码。"""
+
+    return settings.api_key_hash.encode("utf-8")
 
 
 def verify_api_key(api_key: str | None) -> bool:
@@ -23,8 +30,14 @@ def verify_api_key(api_key: str | None) -> bool:
     if not settings.api_key_hash:
         return False
 
+    if len(api_key) != settings.api_key_length:
+        return False
+
     try:
-        return bcrypt.checkpw(api_key.encode('utf-8'), settings.api_key_hash.encode('utf-8'))
+        return bcrypt.checkpw(
+            api_key.encode("utf-8"),
+            _get_api_key_hash_bytes(),
+        )
     except (ValueError, TypeError):
         return False
 
