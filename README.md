@@ -94,7 +94,7 @@ docker run -p 8000:8000 -e REQUIRE_HTTPS=false release2gitcode
 
 | 变量 | 说明 | 默认 |
 |------|------|------|
-| `API_KEY` | 明文 API 密钥（32 位），提供后会自动计算哈希 | - |
+| `API_KEY` | 明文 API 密钥（64 位），提供后会自动计算哈希 | - |
 | `API_KEY_HASH` | bcrypt 哈希后的 API 密钥，直接设置可跳过生成 | - |
 | `HOST` | 监听地址 | `0.0.0.0` |
 | `PORT` | 监听端口 | `8000` |

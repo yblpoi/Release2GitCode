@@ -2,7 +2,7 @@
 
 import uuid
 from typing import Callable
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime, timedelta
 
 from fastapi import Request, status
@@ -63,15 +63,15 @@ class InMemoryRateLimiter:
     """
 
     def __init__(self) -> None:
-        self._requests: dict[str, list[datetime]] = defaultdict(list)
+        self._requests: dict[str, deque[datetime]] = defaultdict(deque)
 
     def _cleanup_expired(self, key: str, window_seconds: int) -> None:
         """清理过期记录"""
 
         cutoff = datetime.utcnow() - timedelta(seconds=window_seconds)
-        self._requests[key] = [
-            ts for ts in self._requests[key] if ts > cutoff
-        ]
+        requests = self._requests[key]
+        while requests and requests[0] <= cutoff:
+            requests.popleft()
 
     def check_and_increment(
         self, key: str, max_requests: int, window_seconds: int = 60

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     # API 密钥哈希（bcrypt 哈希后的值，不存储明文）
     api_key_hash: str = ""
+    api_key_length: int = 64
 
     # 限流配置
     rate_limit_public_key: str = "10/minute"

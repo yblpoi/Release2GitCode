@@ -23,15 +23,15 @@ if [ -z "$API_KEY_HASH" ] && [ -f "$API_KEY_HASH_FILE" ]; then
     API_KEY_HASH=$(cat "$API_KEY_HASH_FILE")
 fi
 
-# 自动生成 32 位 API 密钥（如果没有提供 API_KEY 且 API_KEY_HASH 不存在）
+# 自动生成 64 位 API 密钥（如果没有提供 API_KEY 且 API_KEY_HASH 不存在）
 if [ -z "$API_KEY" ] && [ -z "$API_KEY_HASH" ]; then
-    echo "Generating random 32-character API key..."
+    echo "Generating random 64-character API key..."
     # 使用 Python secrets 模块生成安全随机密钥
     API_KEY=$(python3 -c '
 import secrets
 import string
 chars = string.ascii_uppercase + string.ascii_lowercase + string.digits + "!@#$%^&*()"
-api_key = "".join(secrets.choice(chars) for _ in range(32))
+api_key = "".join(secrets.choice(chars) for _ in range(64))
 print(api_key)
 ')
     echo "Generated new API key (full): $API_KEY"
