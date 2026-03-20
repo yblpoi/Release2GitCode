@@ -1,15 +1,12 @@
 """认证相关 API：获取公钥端点"""
 
 import uuid
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request
 
 from app.core.crypto import get_rsa_key_manager
 from app.core.security import extract_api_key
 from app.core.logger import get_security_logger
-from app.core.crypto import RSAKeyManager
-from app.config.settings import settings
 from app.models.schemas import GetPublicKeyResponse
-from app.api.middleware import get_rate_limiter, get_rate_limit_key
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
 

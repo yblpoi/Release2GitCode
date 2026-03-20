@@ -5,14 +5,13 @@ from typing import Callable
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 
-from fastapi import Request, status
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from app.config.settings import settings
-from app.core.logger import get_security_logger
-from app.exceptions.errors import HTTPSRequiredError, RateLimitExceeded
+from app.exceptions.errors import HTTPSRequiredError
 
 
 class HTTPSCheckMiddleware(BaseHTTPMiddleware):
