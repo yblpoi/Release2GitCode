@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     # API 密钥哈希（bcrypt 哈希后的值，不存储明文）
     api_key_hash: str = ""
+    api_key_length: int = 64
 
     # 限流配置
     rate_limit_public_key: str = "10/minute"
@@ -31,6 +32,9 @@ class Settings(BaseSettings):
     chunk_size: int = 1024 * 1024  # 1MB
     max_file_size: int = 10 * 1024 * 1024 * 1024  # 10GB
     upload_attempts: int = 5
+    http_timeout_seconds: float = 30.0
+    http_max_connections: int = 100
+    http_max_keepalive_connections: int = 20
 
     # 默认重试配置
     retry_delay_seconds: float = 1.0

@@ -54,12 +54,22 @@ class GitCodeStreamUploader:
             "User-Agent": "Release2GitCode/2.0",
         }
 
+    def _build_http_client(self) -> httpx.AsyncClient:
+        """构建统一 HTTP 客户端，复用连接池参数。"""
+
+        limits = httpx.Limits(
+            max_connections=settings.http_max_connections,
+            max_keepalive_connections=settings.http_max_keepalive_connections,
+        )
+        timeout = httpx.Timeout(settings.http_timeout_seconds)
+        return httpx.AsyncClient(limits=limits, timeout=timeout)
+
     async def ensure_release(self, name: Optional[str], body: Optional[str]) -> Dict[str, Any]:
         """确保 release 存在，返回 release 信息"""
 
         url = f"{self._api_base}/repos/{parse.quote(self.owner, safe='')}/{parse.quote(self.repo, safe='')}/releases/tags/{parse.quote(self.tag, safe='')}"
 
-        async with httpx.AsyncClient() as client:
+        async with self._build_http_client() as client:
             try:
                 response = await client.get(url, headers=self._build_headers())
             except httpx.RequestError as e:
@@ -86,7 +96,7 @@ class GitCodeStreamUploader:
             "body": body or "",
         }
 
-        async with httpx.AsyncClient() as client:
+        async with self._build_http_client() as client:
             try:
                 response = await client.post(
                     url,
@@ -127,7 +137,7 @@ class GitCodeStreamUploader:
 
         params = {"file_name": asset_name}
 
-        async with httpx.AsyncClient() as client:
+        async with self._build_http_client() as client:
             try:
                 response = await client.get(
                     url,
@@ -218,40 +228,41 @@ class GitCodeStreamUploader:
 
         content_type = mimetypes.guess_type(asset.name)[0] or "application/octet-stream"
 
-        uploaded_bytes = 0
-        total_bytes = downloader.total_bytes
-
-        async def iter_chunks() -> AsyncIterator[bytes]:
-            nonlocal uploaded_bytes
-            async for chunk in downloader.download_stream(lambda dl_bytes: None):
-                uploaded_bytes += len(chunk)
-                if progress_callback:
-                    progress_callback(uploaded_bytes)
-                yield chunk
-
         request_headers: Dict[str, str] = {
             "User-Agent": "Release2GitCode/2.0",
         }
         if headers:
             request_headers.update(headers)
 
-        if not form_fields:
-            request_headers.setdefault("Content-Type", content_type)
-            content_iterator = iter_chunks()
-        else:
-            boundary = f"----Release2GitCodeStream{asset.id}"
-            content_iterator = self._build_multipart_stream(
-                form_fields, asset.name, content_type, iter_chunks, boundary
-            )
-            request_headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
-
         for attempt in range(1, settings.upload_attempts + 1):
             try:
-                async with httpx.AsyncClient() as client:
+                uploaded_bytes = 0
+
+                async def iter_chunks() -> AsyncIterator[bytes]:
+                    nonlocal uploaded_bytes
+                    async for chunk in downloader.download_stream(lambda dl_bytes: None):
+                        uploaded_bytes += len(chunk)
+                        if progress_callback:
+                            progress_callback(uploaded_bytes)
+                        yield chunk
+
+                content_iterator: AsyncIterator[bytes]
+                current_headers = request_headers.copy()
+                if not form_fields:
+                    current_headers.setdefault("Content-Type", content_type)
+                    content_iterator = iter_chunks()
+                else:
+                    boundary = f"----Release2GitCodeStream{asset.id}"
+                    content_iterator = self._build_multipart_stream(
+                        form_fields, asset.name, content_type, iter_chunks, boundary
+                    )
+                    current_headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
+
+                async with self._build_http_client() as client:
                     response = await client.request(
                         method,
                         upload_url,
-                        headers=request_headers,
+                        headers=current_headers,
                         content=content_iterator,
                         timeout=None,
                     )
