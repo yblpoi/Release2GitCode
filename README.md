@@ -69,6 +69,148 @@ python scripts/upload_to_gitcode.py
 
 工作流示例现在与本地脚本保持一致，默认直接读取仓库中的 `release_assets/` 目录。也就是说，你只需要在触发 release 前把待上传文件准备到 `release_assets/` 下即可；脚本和 CI 都会使用同一套默认行为。
 
+## API 服务器模式
+
+本项目现在提供一个带完整加密认证的 API 服务器，可以直接作为服务部署，接收 GitHub Release URL → GitCode Release 自动同步。
+
+**特性：**
+- **零磁盘占用：** 针对小硬盘容量服务器优化，流式逐个文件下载上传，不写入本地磁盘
+- **完整安全机制：** RSA 4096 非对称加密 + bcrypt API 密钥认证
+- **自动密钥生成：** 容器启动自动生成密钥，重启自动轮换
+
+### 使用 Docker 运行
+
+```bash
+# 构建镜像
+docker build -t release2gitcode .
+
+# 运行（自动生成 API 密钥
+docker run -p 8000:8000 -e REQUIRE_HTTPS=false release2gitcode
+```
+
+容器启动后会输出生成的 API 密钥（只显示前 8 字符），可以在日志中查看。
+
+### 环境变量
+
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `API_KEY` | 明文 API 密钥（32 位），提供后会自动计算哈希 | - |
+| `API_KEY_HASH` | bcrypt 哈希后的 API 密钥，直接设置可跳过生成 | - |
+| `HOST` | 监听地址 | `0.0.0.0` |
+| `PORT` | 监听端口 | `8000` |
+| `REQUIRE_HTTPS` | 是否强制要求 HTTPS | `true` |
+| `RATE_LIMIT_PUBLIC_KEY` | 公钥接口限流 | `10/minute` |
+| `RATE_LIMIT_SYNC` | 同步接口限流 | `5/minute` |
+
+### 持久化存储
+
+API 密钥哈希支持持久化存储，容器重启后保持不变。RSA 密钥对仍然保持每次重启重新生成，符合安全设计。
+
+**使用 Docker 命名卷：**
+
+```bash
+# 创建命名卷
+docker volume create release2gitcode-data
+
+# 运行容器并使用数据卷
+docker run -d -p 8000:8000 -v release2gitcode-data:/data -e REQUIRE_HTTPS=false release2gitcode:latest
+```
+
+**使用绑定挂载：**
+
+```bash
+mkdir -p ./data
+chmod 700 ./data
+
+docker run -d -p 8000:8000 -v $(pwd)/data:/data -e REQUIRE_HTTPS=false release2gitcode:latest
+```
+
+**权限说明：**
+- 数据目录 `/data` 权限：`700`（仅 root 可读可写）
+- API 哈希文件 `/data/api_key_hash` 权限：`600`（仅 root 可读可写）
+- 保证数据安全性，防止未授权访问
+
+**备份与恢复：**
+
+```bash
+# 备份
+docker run --rm --volumes-from release2gitcode -v $(pwd):/backup \
+  cp /data/api_key_hash /backup
+
+# 恢复
+docker run --rm --volumes-from release2gitcode -v $(pwd):/backup \
+  cp /backup/api_key_hash /data/
+```
+
+**行为逻辑：**
+1. 如果环境变量已设置 `API_KEY_HASH`，优先级最高，不加载持久化文件
+2. 如果环境变量未设置 `API_KEY_HASH` 但持久化文件存在，从文件加载
+3. 如果都不存在，自动生成新 API 密钥并保存到持久化文件
+4. RSA 密钥对始终在内存生成，容器退出即销毁，每次重启重新生成
+
+### API 使用流程
+
+**1. 获取公钥
+
+```bash
+curl -H "X-API-Key: your-api-key" https://your-server/api/v1/public-key
+```
+
+响应示例：
+```json
+{
+  "public_key": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n",
+  "key_id": "uuid-string"
+}
+```
+
+**2. 使用公钥加密 GitCode 令牌，然后调用同步接口
+
+```bash
+curl -X POST -H "X-API-Key: your-api-key" -H "Content-Type: application/json" \
+-d '{
+  "github_release_url": "https://github.com/owner/repo/releases/tag/v1.0.0",
+  "gitcode_repo_url": "https://gitcode.com/owner/repo",
+  "encrypted_gitcode_token": "base64-encrypted-token"
+}' \
+https://your-server/api/v1/sync
+```
+
+### 客户端加密示例（Python）：
+
+```python
+import base64
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import serialization, hashes
+
+# 加载服务器返回的公钥
+public_key = serialization.load_pem_public_key(
+    server_public_key_pem.encode('utf-8')
+)
+
+# 加密令牌
+encrypted = public_key.encrypt(
+    gitcode_token.encode('utf-8'),
+    padding.OAEP(
+        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+        algorithm=hashes.SHA256(),
+        label=None
+    )
+)
+
+# base64 编码
+encrypted_b64 = base64.b64encode(encrypted).decode('utf-8')
+```
+
+## GitHub Actions 配置
+
+在仓库中配置以下项：
+
+- `secrets.GITCODE_TOKEN`
+- `vars.GITCODE_REPO_URL`
+
+工作流示例现在与本地脚本保持一致，默认直接读取仓库中的 `release_assets/` 目录。也就是说，你只需要在触发 release 前把待上传文件准备到 `release_assets/` 下即可；脚本和 CI 都会使用同一套默认行为。
+
 ## 参考文档
 
 - GitCode API 总览: <https://docs.gitcode.com/docs/apis/>
