@@ -89,6 +89,7 @@ class LocalUploadConfig(BaseModel):
 
 class SyncResult(BaseModel):
     task_id: str
+    triggered_at: str
     github_release_url: str
     gitcode_repo_url: str
     processed_assets: int

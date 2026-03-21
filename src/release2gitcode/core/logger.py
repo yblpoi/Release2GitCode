@@ -82,6 +82,60 @@ class SecurityLogger:
             extra={"github_url": github_url, "gitcode_url": gitcode_url},
         )
 
+    def log_sync_progress(
+        self,
+        request_id: str,
+        *,
+        asset_name: str,
+        asset_status: str,
+        asset_index: int,
+        total_assets: int,
+        completed_assets: int,
+        remaining_assets: int,
+        processed_assets: int,
+        skipped_assets: int,
+        failed_assets: int,
+        elapsed_seconds: float,
+        estimated_remaining_seconds: float,
+    ) -> None:
+        elapsed_human = self._format_duration(elapsed_seconds)
+        eta_human = self._format_duration(estimated_remaining_seconds)
+        self._log(
+            event_type="sync_progress",
+            request_id=request_id,
+            client_ip="-",
+            success=asset_status != "failed",
+            message=(
+                f"Asset {asset_status}: [{asset_index}/{total_assets}] {asset_name}; "
+                f"completed={completed_assets}/{total_assets}, "
+                f"remaining={remaining_assets}, "
+                f"elapsed={elapsed_human}, "
+                f"eta={eta_human}"
+            ),
+            extra={
+                "asset_name": asset_name,
+                "asset_status": asset_status,
+                "asset_index": asset_index,
+                "total_assets": total_assets,
+                "completed_assets": completed_assets,
+                "remaining_assets": remaining_assets,
+                "processed_assets": processed_assets,
+                "skipped_assets": skipped_assets,
+                "failed_assets": failed_assets,
+                "elapsed_seconds": elapsed_seconds,
+                "elapsed_human": elapsed_human,
+                "estimated_remaining_seconds": estimated_remaining_seconds,
+                "estimated_remaining_human": eta_human,
+            },
+        )
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        total_seconds = max(int(round(seconds)), 0)
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
     def log_sync_completed(
         self,
         request_id: str,

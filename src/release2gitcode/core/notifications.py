@@ -21,28 +21,18 @@ def extract_serverchan_uid(sendkey: str) -> str:
 
 
 def build_serverchan_payload(result: SyncResult) -> dict[str, str]:
-    title = (
-        f"Release2GitCode success: {result.processed_assets}/{result.total_assets}"
-        if result.is_success
-        else f"Release2GitCode partial failure: {len(result.failed_assets)} asset(s)"
-    )
-    failed_summary = ", ".join(result.failed_assets[:10]) or "None"
+    title = "同步成功" if result.is_success else "同步失败"
     desp = "\n".join(
         [
-            f"Task ID: `{result.task_id}`",
-            f"GitHub Release: {result.github_release_url}",
-            f"GitCode Repo: {result.gitcode_repo_url}",
-            f"Processed: {result.processed_assets}",
-            f"Skipped: {result.skipped_assets}",
-            f"Failed: {len(result.failed_assets)}",
-            f"Failed Assets: {failed_summary}",
-            f"Duration: {result.duration_seconds:.2f}s",
+            f"触发时间：{result.triggered_at}",
+            f"GitHub发行版链接：{result.github_release_url}",
+            f"GitCode仓库：{result.gitcode_repo_url}",
         ]
     )
     return {
         "title": title,
         "desp": desp,
-        "short": f"processed={result.processed_assets}, skipped={result.skipped_assets}, failed={len(result.failed_assets)}",
+        "short": title,
         "tags": "release2gitcode|gitcode|sync",
     }
 
