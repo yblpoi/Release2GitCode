@@ -1,11 +1,41 @@
 # Release2GitCode
 
+![Version](https://img.shields.io/badge/version-3.0.0-blue)
+![License](https://img.shields.io/badge/license-AGPL--3.0-green)
+![Python](https://img.shields.io/badge/python-3.11+-blue)
+
 `Release2GitCode` 用于把 GitHub Release 同步到 GitCode Release，现在提供两种正式入口：
 
 - CLI 客户端：适合本地执行、CI 直接上传、本地排障。
 - FastAPI 服务端：适合集中管理 API Key、用 GitHub Actions 通过加密请求触发同步。
 
 当前仓库已经重构为共享核心库 + 双入口结构，避免此前 CLI 脚本和服务端分别维护两套上传逻辑。
+
+## 目录
+
+- [Release2GitCode](#release2gitcode)
+  - [目录](#目录)
+  - [架构](#架构)
+  - [核心特性](#核心特性)
+  - [安装](#安装)
+  - [CLI 用法](#cli-用法)
+    - [1. 直接同步 GitHub Release 到 GitCode](#1-直接同步-github-release-到-gitcode)
+    - [2. 上传本地构建产物到 GitCode Release](#2-上传本地构建产物到-gitcode-release)
+    - [3. 用 CLI 加密机密](#3-用-cli-加密机密)
+  - [服务端部署](#服务端部署)
+    - [启动方式](#启动方式)
+    - [Docker Compose 部署流程](#docker-compose-部署流程)
+      - [方式 A：推荐，手动准备固定 64 位 API Key](#方式-a推荐手动准备固定-64-位-api-key)
+      - [方式 B：让容器首次启动自动生成 API Key](#方式-b让容器首次启动自动生成-api-key)
+    - [服务端环境变量](#服务端环境变量)
+  - [`/api/v1/sync` 请求体](#apiv1sync-请求体)
+  - [GitHub Actions 集成](#github-actions-集成)
+  - [Docker](#docker)
+    - [API Key 说明](#api-key-说明)
+  - [ServerChan3 说明](#serverchan3-说明)
+  - [测试](#测试)
+  - [故障排查](#故障排查)
+  - [相关文档](#相关文档)
 
 ## 架构
 
@@ -377,7 +407,7 @@ pytest
 
 ## 相关文档
 
-- [ChangeLog.md](/c:/GitHub/Release2GitCode/ChangeLog.md)
-- [WARNINGS_FIXED.md](/c:/GitHub/Release2GitCode/WARNINGS_FIXED.md)
-- [Workflow README](/c:/GitHub/Release2GitCode/.github/workflows/README.md)
-- [Workflow Quickstart](/c:/GitHub/Release2GitCode/.github/workflows/QUICKSTART.md)
+- [变更日志](docs/changelog.md)
+- [重构说明](docs/reference/refactor-notes.md)
+- [工作流指南](docs/workflows/README.md)
+- [工作流快速开始](docs/workflows/quickstart.md)
