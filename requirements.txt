@@ -1,11 +1,1 @@
-requests>=2.32,<3
-
-# API Server dependencies
-fastapi>=0.100,<1
-uvicorn>=0.23,<1
-cryptography>=41,<42
-httpx>=0.24,<1
-pydantic>=2.0,<3
-pydantic-settings>=2.0,<3
-bcrypt>=4.0,<5
-python-json-logger>=2.0,<3
+.

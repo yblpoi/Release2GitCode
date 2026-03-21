@@ -8,8 +8,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.log
-*.md
 LICENSE
-WARNINGS_FIXED.md
-scripts/
 data/
+tests/
+.github/
+app/
+scripts/

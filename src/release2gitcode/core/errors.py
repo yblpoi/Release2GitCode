@@ -1,20 +1,18 @@
-"""自定义异常定义"""
+"""Application error types."""
 
 
 class AppError(Exception):
-    """应用自定义异常基类"""
+    """Base application error with an HTTP-friendly shape."""
 
-    code: str
-    status_code: int
+    code = "app_error"
+    status_code = 500
 
     def __init__(self, message: str = "") -> None:
         super().__init__(message)
-        self.message = message
+        self.message = message or self.__class__.__name__
 
 
 class CryptoGenerationError(AppError):
-    """RSA 密钥生成失败"""
-
     code = "crypto_generation_error"
     status_code = 500
 
@@ -23,8 +21,6 @@ class CryptoGenerationError(AppError):
 
 
 class MissingAPIKeyError(AppError):
-    """缺少 API 密钥"""
-
     code = "missing_api_key"
     status_code = 401
 
@@ -33,8 +29,6 @@ class MissingAPIKeyError(AppError):
 
 
 class InvalidAPIKeyError(AppError):
-    """API 密钥无效"""
-
     code = "invalid_api_key"
     status_code = 401
 
@@ -43,52 +37,46 @@ class InvalidAPIKeyError(AppError):
 
 
 class TokenDecryptionError(AppError):
-    """令牌解密失败"""
-
     code = "token_decryption_error"
     status_code = 400
 
-    def __init__(self, message: str = "Failed to decrypt GitCode token. The token may be encrypted with an incorrect public key or corrupted.") -> None:
+    def __init__(self, message: str = "Failed to decrypt the provided secret") -> None:
         super().__init__(message)
 
 
 class InvalidGitHubURLError(AppError):
-    """GitHub URL 解析失败"""
-
     code = "invalid_github_url"
     status_code = 400
 
     def __init__(self, url: str, message: str = "Invalid GitHub Release URL") -> None:
         super().__init__(f"{message}: {url}")
-        self.url = url
+
+
+class InvalidGitCodeURLError(AppError):
+    code = "invalid_gitcode_url"
+    status_code = 400
+
+    def __init__(self, url: str, message: str = "Invalid GitCode repository URL") -> None:
+        super().__init__(f"{message}: {url}")
 
 
 class GitHubReleaseNotFound(AppError):
-    """GitHub Release 不存在"""
-
     code = "github_release_not_found"
     status_code = 404
 
-    def __init__(self, owner: str, repo: str, tag: str, message: str = "GitHub Release not found") -> None:
-        super().__init__(f"{message}: {owner}/{repo} tag {tag}")
-        self.owner = owner
-        self.repo = repo
-        self.tag = tag
+    def __init__(self, owner: str, repo: str, tag: str) -> None:
+        super().__init__(f"GitHub Release not found: {owner}/{repo} tag {tag}")
 
 
 class GitCodeAuthError(AppError):
-    """GitCode 认证失败"""
-
     code = "gitcode_auth_error"
     status_code = 400
 
-    def __init__(self, message: str = "GitCode authentication failed. The token may be invalid.") -> None:
+    def __init__(self, message: str = "GitCode authentication failed") -> None:
         super().__init__(message)
 
 
 class NetworkError(AppError):
-    """网络请求失败"""
-
     code = "network_error"
     status_code = 503
 
@@ -96,21 +84,17 @@ class NetworkError(AppError):
         super().__init__(message)
 
 
-class RateLimitExceeded(AppError):
-    """请求超限"""
-
-    code = "rate_limit_exceeded"
-    status_code = 429
-
-    def __init__(self, message: str = "Too many requests, please try again later") -> None:
-        super().__init__(message)
-
-
 class HTTPSRequiredError(AppError):
-    """需要 HTTPS"""
-
     code = "https_required"
     status_code = 426
 
     def __init__(self, message: str = "HTTPS is required for all API requests") -> None:
+        super().__init__(message)
+
+
+class ConfigurationError(AppError):
+    code = "configuration_error"
+    status_code = 400
+
+    def __init__(self, message: str = "Invalid configuration") -> None:
         super().__init__(message)

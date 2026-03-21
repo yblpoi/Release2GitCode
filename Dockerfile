@@ -7,12 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY app ./app
+COPY pyproject.toml README.md ./
+COPY src ./src
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 
+RUN pip install .
 RUN chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 8000
