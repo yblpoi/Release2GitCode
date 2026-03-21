@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     http_max_connections: int = 100
     http_max_keepalive_connections: int = 20
     retry_delay_seconds: float = 1.0
+    sync_concurrency: int = 3
+    server_log_level: str = "info"
+    server_access_log: bool = True
     model_config = ConfigDict(env_prefix="", case_sensitive=False)
 
 

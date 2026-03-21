@@ -274,6 +274,7 @@ class GitCodeReleaseClient:
         for attempt in range(1, upload_attempts + 1):
             request_headers = {"User-Agent": "Release2GitCode/3.0", **headers}
             length_computed = False
+            attempt_started_at = asyncio.get_running_loop().time()
             try:
                 if form_fields:
                     boundary = f"----Release2GitCode{asset.id or 'upload'}"
@@ -312,6 +313,18 @@ class GitCodeReleaseClient:
                 await asyncio.sleep(settings.retry_delay_seconds)
                 continue
 
+            duration_seconds = asyncio.get_running_loop().time() - attempt_started_at
+            throughput_mbps = file_size / (1024 * 1024) / duration_seconds if file_size and duration_seconds > 0 else None
+            logger.info(
+                "Upload attempt done: asset=%s attempt=%s/%s method=%s status=%s duration=%.2fs throughput=%s",
+                asset.name,
+                attempt,
+                upload_attempts,
+                method,
+                response.status_code,
+                duration_seconds,
+                f"{throughput_mbps:.2f} MB/s" if throughput_mbps is not None else "unknown",
+            )
             if response.status_code in {401, 403}:
                 raise GitCodeAuthError()
             if not length_computed:

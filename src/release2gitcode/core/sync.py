@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from asyncio import Lock, Semaphore
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import AsyncIterator
@@ -53,15 +54,49 @@ class ReleaseSyncService:
             processed = 0
             skipped = 0
             failed_assets: list[str] = []
+            progress_lock = Lock()
+            semaphore = Semaphore(max(1, settings.sync_concurrency))
 
-            for asset_index, asset in enumerate(release_info.assets, start=1):
+            async def handle_asset(asset_index: int, asset: GitHubAsset) -> None:
+                nonlocal processed, skipped
                 if asset.name in existing_assets:
-                    skipped += 1
+                    async with progress_lock:
+                        skipped += 1
+                        self._log_progress(
+                            logger=logger,
+                            task_id=task_id,
+                            asset_name=asset.name,
+                            asset_status="skipped",
+                            asset_index=asset_index,
+                            processed=processed,
+                            skipped=skipped,
+                            failed=len(failed_assets),
+                            total_assets=total_assets,
+                            start_time=start_time,
+                        )
+                    return
+
+                async with semaphore:
+                    uploaded = await self._upload_github_asset(
+                        gitcode=gitcode,
+                        tag=release_info.tag_name,
+                        asset=asset,
+                        task_id=task_id,
+                    )
+
+                async with progress_lock:
+                    if uploaded:
+                        processed += 1
+                        existing_assets.add(asset.name)
+                        status = "completed"
+                    else:
+                        failed_assets.append(asset.name)
+                        status = "failed"
                     self._log_progress(
                         logger=logger,
                         task_id=task_id,
                         asset_name=asset.name,
-                        asset_status="skipped",
+                        asset_status=status,
                         asset_index=asset_index,
                         processed=processed,
                         skipped=skipped,
@@ -69,36 +104,10 @@ class ReleaseSyncService:
                         total_assets=total_assets,
                         start_time=start_time,
                     )
-                    continue
-                if await self._upload_github_asset(gitcode=gitcode, tag=release_info.tag_name, asset=asset):
-                    processed += 1
-                    existing_assets.add(asset.name)
-                    self._log_progress(
-                        logger=logger,
-                        task_id=task_id,
-                        asset_name=asset.name,
-                        asset_status="completed",
-                        asset_index=asset_index,
-                        processed=processed,
-                        skipped=skipped,
-                        failed=len(failed_assets),
-                        total_assets=total_assets,
-                        start_time=start_time,
-                    )
-                else:
-                    failed_assets.append(asset.name)
-                    self._log_progress(
-                        logger=logger,
-                        task_id=task_id,
-                        asset_name=asset.name,
-                        asset_status="failed",
-                        asset_index=asset_index,
-                        processed=processed,
-                        skipped=skipped,
-                        failed=len(failed_assets),
-                        total_assets=total_assets,
-                        start_time=start_time,
-                    )
+
+            await asyncio.gather(
+                *(handle_asset(asset_index, asset) for asset_index, asset in enumerate(release_info.assets, start=1))
+            )
 
             result = SyncResult(
                 task_id=task_id,
@@ -153,7 +162,16 @@ class ReleaseSyncService:
                 duration_seconds=time.time() - start_time,
             )
 
-    async def _upload_github_asset(self, *, gitcode: GitCodeReleaseClient, tag: str, asset: GitHubAsset) -> bool:
+    async def _upload_github_asset(
+        self,
+        *,
+        gitcode: GitCodeReleaseClient,
+        tag: str,
+        asset: GitHubAsset,
+        task_id: str,
+    ) -> bool:
+        logger = get_security_logger()
+
         async def stream_factory() -> AsyncIterator[bytes]:
             async with gitcode.client.stream("GET", asset.browser_download_url) as response:
                 if response.status_code >= 400:
@@ -162,12 +180,23 @@ class ReleaseSyncService:
                     yield chunk
 
         try:
+            started_at = time.time()
             await gitcode.upload_stream(
                 tag,
                 asset,
                 stream_factory,
                 upload_attempts=settings.upload_attempts,
                 timeout_seconds=None,
+            )
+            duration = time.time() - started_at
+            throughput_mbps = asset.size / (1024 * 1024) / duration if asset.size > 0 and duration > 0 else None
+            logger.log_asset_transfer(
+                task_id,
+                asset_name=asset.name,
+                phase="download_and_upload",
+                bytes_total=asset.size,
+                duration_seconds=duration,
+                throughput_mbps=throughput_mbps,
             )
             return True
         except Exception:

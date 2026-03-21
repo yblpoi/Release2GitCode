@@ -23,7 +23,9 @@ from release2gitcode.server.middleware import HTTPSCheckMiddleware
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     rsa_manager = get_rsa_key_manager()
-    get_security_logger().log_key_generated(rsa_manager.get_key_id())
+    logger = get_security_logger()
+    logger.log_key_generated(rsa_manager.get_key_id())
+    logger.log_server_boot()
     yield
 
 
