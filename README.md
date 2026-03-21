@@ -135,7 +135,7 @@ python -m release2gitcode.server.main
 
 ```bash
 docker build -t release2gitcode .
-docker run -p 8000:8000 -e REQUIRE_HTTPS=false -e API_KEY=YOUR_64_CHAR_API_KEY release2gitcode
+docker run -p 8000:8000 -e REQUIRE_HTTPS=false -e API_KEY=YOUR_R2GC_PREFIXED_64_CHAR_API_KEY release2gitcode
 ```
 
 或使用 Docker Compose：
@@ -173,8 +173,11 @@ cp .env.example .env
 python - <<'PY'
 import secrets
 import string
-chars = string.ascii_uppercase + string.ascii_lowercase + string.digits + "!@#$%^&*()"
-print("".join(secrets.choice(chars) for _ in range(64)))
+prefix = "r2gc-"
+chars = string.ascii_uppercase + string.ascii_lowercase + string.digits + "-"
+random_part = "".join(secrets.choice(chars) for _ in range(59))
+api_key = prefix + random_part
+print(api_key)
 PY
 ```
 
@@ -317,12 +320,15 @@ Store it securely before restarting:
 
 ### API Key 说明
 
-`API_KEY` 必须是 64 个字符。
+`API_KEY` 必须是 64 个字符，且符合以下格式要求：
+- 必须以 "r2gc-" 为前缀
+- 剩余59个字符只能包含：大写字母（A-Z）、小写字母（a-z）、数字（0-9）和连字符（-）
+- 示例格式：`r2gc-AbC123-xYz789-...`（共64字符）
 
 你有两种选择：
 
-- 手动制作并通过 `API_KEY` 传入
-- 不传 `API_KEY`，让容器首次启动时自动生成
+- 手动制作并通过 `API_KEY` 传入（推荐生产环境）
+- 不传 `API_KEY`，让容器首次启动时自动生成（适合测试环境）
 
 推荐结论：
 

@@ -1,4 +1,12 @@
 #!/bin/bash
+###
+ # @Author: yblpoi yblpoi@users.noreply.github.com
+ # @Date: 2026-03-21 02:58:26
+ # @LastEditors: yblpoi yblpoi@users.noreply.github.com
+ # @LastEditTime: 2026-03-21 19:54:10
+ # @FilePath: \Release2GitCode\docker-entrypoint.sh
+ # @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+### 
 set -e
 
 DATA_DIR="/data"
@@ -15,8 +23,10 @@ if [ -z "$API_KEY" ] && [ -z "$API_KEY_HASH" ]; then
     API_KEY=$(python3 -c '
 import secrets
 import string
-chars = string.ascii_uppercase + string.ascii_lowercase + string.digits + "!@#$%^&*()"
-api_key = "".join(secrets.choice(chars) for _ in range(64))
+prefix = "r2gc-"
+chars = string.ascii_uppercase + string.ascii_lowercase + string.digits + "-"
+random_part = "".join(secrets.choice(chars) for _ in range(59))
+api_key = prefix + random_part
 print(api_key)
 ')
     echo "Generated a new 64-character API key for this container."

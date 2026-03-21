@@ -36,6 +36,14 @@ class InvalidAPIKeyError(AppError):
         super().__init__(message)
 
 
+class InvalidAPIKeyFormatError(AppError):
+    code = "invalid_api_key_format"
+    status_code = 401
+
+    def __init__(self, message: str = "Invalid API key format. Must be 64 characters, start with 'r2gc-', and contain only letters, digits, and hyphens") -> None:
+        super().__init__(message)
+
+
 class TokenDecryptionError(AppError):
     code = "token_decryption_error"
     status_code = 400
