@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "release2gitcode"
+version = "3.0.0"
+description = "Sync GitHub Releases to GitCode from CLI or API server."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "bcrypt>=4.0,<5",
+  "cryptography>=41,<42",
+  "fastapi>=0.100,<1",
+  "httpx>=0.24,<1",
+  "pydantic>=2.0,<3",
+  "pydantic-settings>=2.0,<3",
+  "python-json-logger>=2.0,<3",
+  "requests>=2.32,<3",
+  "uvicorn>=0.23,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+release2gitcode = "release2gitcode.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,195 @@
+name: Sync Release To GitCode
+
+on:
+  workflow_dispatch:
+    inputs:
+      github_release_url:
+        description: "GitHub Release URL (e.g. https://github.com/owner/repo/releases/tag/v1.0.0)"
+        required: true
+        type: string
+      gitcode_repo_url:
+        description: "GitCode repository URL (e.g. https://gitcode.com/owner/repo)"
+        required: true
+        type: string
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+      API_KEY: ${{ secrets.API_KEY }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+      SERVERCHAN3_SENDKEY: ${{ secrets.SERVERCHAN3_SENDKEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          command -v jq >/dev/null 2>&1 || { echo "Error: jq command not found." >&2; exit 1; }
+
+          missing=()
+          for key in API_SERVER_URL API_KEY GITCODE_TOKEN; do
+            if [ -z "${!key:-}" ]; then
+              missing+=("$key")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Error: Missing required configuration: ${missing[*]}" >&2
+            exit 1
+          fi
+
+          github_url="${{ inputs.github_release_url }}"
+          gitcode_url="${{ inputs.gitcode_repo_url }}"
+
+          if [[ ! "$github_url" =~ ^https://github\.com/[^/]+/[^/]+/releases/tag/.+$ ]]; then
+            echo "Error: Invalid GitHub Release URL format" >&2
+            exit 1
+          fi
+
+          if [[ ! "$gitcode_url" =~ ^https://gitcode\.com/[^/]+/[^/]+(\.git)?$ ]]; then
+            echo "Error: Invalid GitCode repository URL format" >&2
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CLI
+        run: pip install .
+
+      - name: Get public key from API server
+        id: get_public_key
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          response=$(curl -sS -w "\n%{http_code}" \
+            -H "X-API-Key: $API_KEY" \
+            "$API_SERVER_URL/api/v1/public-key")
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+
+          if [ "$http_code" -ne 200 ]; then
+            echo "Error: Failed to get public key (HTTP $http_code)" >&2
+            echo "Response: $body" >&2
+            exit 1
+          fi
+
+          public_key=$(echo "$body" | jq -r '.public_key')
+          key_id=$(echo "$body" | jq -r '.key_id')
+
+          echo "key_id=$key_id" >> "$GITHUB_OUTPUT"
+          {
+            echo "PUBLIC_KEY<<EOF"
+            echo "$public_key"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Encrypt GitHub token
+        id: encrypt_github
+        shell: bash
+        env:
+          PUBLIC_KEY: ${{ steps.get_public_key.outputs.PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "encrypted_GH_TOKEN=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          encrypted=$(release2gitcode encrypt --public-key-env PUBLIC_KEY --secret-env GH_TOKEN)
+          echo "encrypted_GH_TOKEN=$encrypted" >> "$GITHUB_OUTPUT"
+
+      - name: Encrypt GitCode token
+        id: encrypt_gitcode
+        shell: bash
+        env:
+          PUBLIC_KEY: ${{ steps.get_public_key.outputs.PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          encrypted=$(release2gitcode encrypt --public-key-env PUBLIC_KEY --secret-env GITCODE_TOKEN)
+          echo "encrypted_token=$encrypted" >> "$GITHUB_OUTPUT"
+
+      - name: Encrypt ServerChan3 SendKey
+        id: encrypt_serverchan
+        shell: bash
+        env:
+          PUBLIC_KEY: ${{ steps.get_public_key.outputs.PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SERVERCHAN3_SENDKEY:-}" ]; then
+            echo "encrypted_sendkey=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          encrypted=$(release2gitcode encrypt --public-key-env PUBLIC_KEY --secret-env SERVERCHAN3_SENDKEY)
+          echo "encrypted_sendkey=$encrypted" >> "$GITHUB_OUTPUT"
+
+      - name: Submit sync request to API server
+        id: submit_sync
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          request_body=$(jq -n \
+            --arg github_url "${{ inputs.github_release_url }}" \
+            --arg gitcode_url "${{ inputs.gitcode_repo_url }}" \
+            --arg encrypted_GH_TOKEN "${{ steps.encrypt_github.outputs.encrypted_GH_TOKEN }}" \
+            --arg encrypted_token "${{ steps.encrypt_gitcode.outputs.encrypted_token }}" \
+            --arg encrypted_sendkey "${{ steps.encrypt_serverchan.outputs.encrypted_sendkey }}" \
+            '{
+              github_release_url: $github_url,
+              gitcode_repo_url: $gitcode_url,
+              encrypted_gitcode_token: $encrypted_token
+            }
+            + (if $encrypted_GH_TOKEN == "" then {} else { encrypted_GH_TOKEN: $encrypted_GH_TOKEN } end)
+            + (if $encrypted_sendkey == "" then {} else { encrypted_serverchan3_sendkey: $encrypted_sendkey } end)')
+
+          response=$(curl -sS -w "\n%{http_code}" \
+            -X POST \
+            -H "X-API-Key: $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$request_body" \
+            "$API_SERVER_URL/api/v1/sync")
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+
+          if [ "$http_code" -ne 200 ]; then
+            echo "Error: Failed to submit sync request (HTTP $http_code)" >&2
+            echo "Response: $body" >&2
+            exit 1
+          fi
+
+          task_id=$(echo "$body" | jq -r '.task_id')
+          status=$(echo "$body" | jq -r '.status')
+          message=$(echo "$body" | jq -r '.message')
+
+          echo "task_id=$task_id" >> "$GITHUB_OUTPUT"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          {
+            echo "message<<EOF"
+            echo "$message"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "## Sync Request Summary"
+            echo ""
+            echo "**Task ID:** \`${{ steps.submit_sync.outputs.task_id }}\`"
+            echo "**Status:** ${{ steps.submit_sync.outputs.status }}"
+            echo "**Message:** ${{ steps.submit_sync.outputs.message }}"
+            echo "**GitHub Token:** $([ -n "${GH_TOKEN:-}" ] && echo enabled || echo disabled)"
+            echo "**ServerChan3:** $([ -n "${SERVERCHAN3_SENDKEY:-}" ] && echo enabled || echo disabled)"
+          } >> "$GITHUB_STEP_SUMMARY"
