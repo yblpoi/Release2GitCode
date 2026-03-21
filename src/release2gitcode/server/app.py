@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -86,43 +87,43 @@ def create_app() -> FastAPI:
             logger.log_token_decrypt_failed(task_id, client_ip, api_key, exc.message)
             raise
 
-        try:
-            result = await sync_service.sync_github_release(
-                github_release_url=github_url,
-                gitcode_repo_url=gitcode_url,
-                gitcode_token=gitcode_token,
-                GH_TOKEN=GH_TOKEN,
-                task_id=task_id,
-                serverchan3_sendkey=sendkey,
-            )
-        except AppError as exc:
-            logger.log_sync_failed(task_id, client_ip, api_key, exc.message)
-            raise
+        async def run_sync_in_background() -> None:
+            try:
+                result = await sync_service.sync_github_release(
+                    github_release_url=github_url,
+                    gitcode_repo_url=gitcode_url,
+                    gitcode_token=gitcode_token,
+                    GH_TOKEN=GH_TOKEN,
+                    task_id=task_id,
+                    serverchan3_sendkey=sendkey,
+                )
+            except AppError as exc:
+                logger.log_sync_failed(task_id, client_ip, api_key, exc.message)
+                return
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.log_sync_failed(task_id, client_ip, api_key, str(exc))
+                return
 
-        logger.log_sync_completed(
-            task_id,
-            client_ip,
-            api_key,
-            result.total_assets,
-            result.processed_assets,
-            result.skipped_assets,
-            len(result.failed_assets),
-            result.duration_seconds,
-            result.notification_warning,
-        )
-        message = (
-            f"Synchronization completed. Processed {result.processed_assets} assets, "
-            f"skipped {result.skipped_assets}, failed {len(result.failed_assets)}."
-        )
-        if result.notification_warning:
-            message = f"{message} Notification warning: {result.notification_warning}"
+            logger.log_sync_completed(
+                task_id,
+                client_ip,
+                api_key,
+                result.total_assets,
+                result.processed_assets,
+                result.skipped_assets,
+                len(result.failed_assets),
+                result.duration_seconds,
+                result.notification_warning,
+            )
+
+        asyncio.create_task(run_sync_in_background())
         return SyncResponse(
-            task_id=result.task_id,
-            status="completed",
-            message=message,
-            processed_assets=result.processed_assets,
-            skipped_assets=result.skipped_assets,
-            failed_assets=result.failed_assets,
+            task_id=task_id,
+            status="accepted",
+            message="Synchronization task accepted and running in background.",
+            processed_assets=0,
+            skipped_assets=0,
+            failed_assets=[],
         )
 
     app.include_router(router)
