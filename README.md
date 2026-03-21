@@ -252,6 +252,9 @@ Store it securely before restarting:
 | `HTTP_MAX_CONNECTIONS` | 否 | `100` | Core | 连接池最大连接数 |
 | `HTTP_MAX_KEEPALIVE_CONNECTIONS` | 否 | `20` | Core | Keep-alive 连接数 |
 | `RETRY_DELAY_SECONDS` | 否 | `1.0` | Core | 重试等待秒数 |
+| `SYNC_CONCURRENCY` | 否 | `3` | Core | GitHub 资源并发同步数（用于提升总吞吐） |
+| `SERVER_LOG_LEVEL` | 否 | `info` | Server | Uvicorn 日志等级 |
+| `SERVER_ACCESS_LOG` | 否 | `true` | Server | 是否输出 Uvicorn Access Log |
 
 说明：
 
@@ -315,6 +318,8 @@ Store it securely before restarting:
 1. 从 `/data/api_key_hash` 加载或生成 `API_KEY_HASH`
 2. 若只提供 `API_KEY`，自动计算 bcrypt 哈希并持久化
 3. 启动 `python -m release2gitcode.server.main`
+
+容器启动时会额外输出关键运行参数（连接池、分块大小、重试次数、并发度、日志等级），便于直接从 `docker logs` 排查性能瓶颈和配置问题。
 
 如果使用 Docker Compose，以上变量通常通过 `.env` 提供，无需手改 `docker-compose.yml`。
 

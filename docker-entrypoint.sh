@@ -60,8 +60,17 @@ fi
 export API_KEY_HASH
 
 echo "Starting Release2GitCode API server..."
+echo "Timestamp (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 echo "Host: ${HOST:-0.0.0.0}"
 echo "Port: ${PORT:-8000}"
 echo "Require HTTPS: ${REQUIRE_HTTPS:-true}"
+echo "HTTP Timeout Seconds: ${HTTP_TIMEOUT_SECONDS:-30.0}"
+echo "HTTP Max Connections: ${HTTP_MAX_CONNECTIONS:-100}"
+echo "HTTP Max Keepalive Connections: ${HTTP_MAX_KEEPALIVE_CONNECTIONS:-20}"
+echo "Upload Attempts: ${UPLOAD_ATTEMPTS:-5}"
+echo "Chunk Size: ${CHUNK_SIZE:-1048576}"
+echo "Sync Concurrency: ${SYNC_CONCURRENCY:-3}"
+echo "Server Log Level: ${SERVER_LOG_LEVEL:-info}"
+echo "Server Access Log: ${SERVER_ACCESS_LOG:-true}"
 
 exec python -m release2gitcode.server.main

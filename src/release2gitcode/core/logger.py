@@ -82,6 +82,58 @@ class SecurityLogger:
             extra={"github_url": github_url, "gitcode_url": gitcode_url},
         )
 
+    def log_asset_transfer(
+        self,
+        request_id: str,
+        *,
+        asset_name: str,
+        phase: str,
+        bytes_total: int | None,
+        duration_seconds: float,
+        throughput_mbps: float | None,
+        attempt: int | None = None,
+    ) -> None:
+        bytes_human = f"{bytes_total} bytes" if bytes_total is not None else "unknown"
+        speed_human = f"{throughput_mbps:.2f} MB/s" if throughput_mbps is not None else "unknown"
+        self._log(
+            event_type="asset_transfer",
+            request_id=request_id,
+            client_ip="-",
+            success=True,
+            message=(
+                f"{phase} finished for {asset_name}: size={bytes_human}, duration={duration_seconds:.2f}s, "
+                f"throughput={speed_human}"
+            ),
+            extra={
+                "asset_name": asset_name,
+                "phase": phase,
+                "bytes_total": bytes_total,
+                "duration_seconds": duration_seconds,
+                "throughput_mbps": throughput_mbps,
+                "attempt": attempt,
+            },
+        )
+
+    def log_server_boot(self) -> None:
+        self._log(
+            event_type="server_boot",
+            request_id="-",
+            client_ip="-",
+            success=True,
+            message="Release2GitCode API server boot completed",
+            extra={
+                "require_https": settings.require_https,
+                "http_timeout_seconds": settings.http_timeout_seconds,
+                "http_max_connections": settings.http_max_connections,
+                "http_max_keepalive_connections": settings.http_max_keepalive_connections,
+                "chunk_size": settings.chunk_size,
+                "upload_attempts": settings.upload_attempts,
+                "sync_concurrency": settings.sync_concurrency,
+                "server_log_level": settings.server_log_level,
+                "server_access_log": settings.server_access_log,
+            },
+        )
+
     def log_sync_progress(
         self,
         request_id: str,
