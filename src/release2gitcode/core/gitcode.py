@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import mimetypes
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable
@@ -13,6 +14,90 @@ import httpx
 from release2gitcode.core.config import settings
 from release2gitcode.core.errors import GitCodeAuthError, InvalidGitCodeURLError, NetworkError
 from release2gitcode.core.models import GitCodeRepoRef, GitHubAsset
+
+
+logger = logging.getLogger(__name__)
+
+
+class RawUploadStream:
+    """Async stream wrapper for raw uploads with deterministic total length when available."""
+
+    def __init__(self, stream_factory: Callable[[], AsyncIterator[bytes]], total_bytes: int | None) -> None:
+        self._stream_factory = stream_factory
+        self.total_bytes = total_bytes
+
+    def __aiter__(self) -> AsyncIterator[bytes]:
+        return self._stream_factory()
+
+    def __len__(self) -> int:
+        if self.total_bytes is None:
+            raise TypeError("Raw upload stream length is unknown")
+        return self.total_bytes
+
+
+class MultipartUploadStream:
+    """Async multipart stream that exposes total body length for Content-Length."""
+
+    def __init__(
+        self,
+        *,
+        boundary: str,
+        form_fields: dict[str, str],
+        filename: str,
+        content_type: str,
+        stream_factory: Callable[[], AsyncIterator[bytes]],
+        file_field_name: str,
+        file_size: int | None,
+    ) -> None:
+        self._stream_factory = stream_factory
+        self._prefix_chunks = self._build_prefix(boundary, form_fields, filename, content_type, file_field_name)
+        self._suffix_chunk = f"\r\n--{boundary}--\r\n".encode("utf-8")
+        self.total_bytes = (
+            sum(len(chunk) for chunk in self._prefix_chunks) + file_size + len(self._suffix_chunk)
+            if file_size is not None
+            else None
+        )
+
+    def __aiter__(self) -> AsyncIterator[bytes]:
+        return self._iter_chunks()
+
+    def __len__(self) -> int:
+        if self.total_bytes is None:
+            raise TypeError("Multipart upload stream length is unknown")
+        return self.total_bytes
+
+    async def _iter_chunks(self) -> AsyncIterator[bytes]:
+        for chunk in self._prefix_chunks:
+            yield chunk
+        async for chunk in self._stream_factory():
+            yield chunk
+        yield self._suffix_chunk
+
+    @staticmethod
+    def _build_prefix(
+        boundary: str,
+        form_fields: dict[str, str],
+        filename: str,
+        content_type: str,
+        file_field_name: str,
+    ) -> list[bytes]:
+        chunks: list[bytes] = []
+        for key, value in form_fields.items():
+            chunks.append(
+                (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="{key}"\r\n\r\n'
+                    f"{value}\r\n"
+                ).encode("utf-8")
+            )
+        chunks.append(
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{file_field_name}"; filename="{filename}"\r\n'
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode("utf-8")
+        )
+        return chunks
 
 
 def parse_gitcode_repo_url(url: str) -> GitCodeRepoRef:
@@ -184,17 +269,40 @@ class GitCodeReleaseClient:
         upload_url, method, headers, form_fields, filename_query_key, file_field_name = self._extract_upload_target(upload_response)
         upload_url = self._append_filename_query(upload_url, asset.name, filename_query_key)
         content_type = mimetypes.guess_type(asset.name)[0] or "application/octet-stream"
-        request_headers = {"User-Agent": "Release2GitCode/3.0", **headers}
+        file_size = asset.size if isinstance(asset.size, int) and asset.size >= 0 else None
 
         for attempt in range(1, upload_attempts + 1):
+            request_headers = {"User-Agent": "Release2GitCode/3.0", **headers}
+            length_computed = False
             try:
                 if form_fields:
                     boundary = f"----Release2GitCode{asset.id or 'upload'}"
                     request_headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
-                    content = self._multipart_stream(boundary, form_fields, asset.name, content_type, stream_factory, file_field_name)
+                    content = MultipartUploadStream(
+                        boundary=boundary,
+                        form_fields=form_fields,
+                        filename=asset.name,
+                        content_type=content_type,
+                        stream_factory=stream_factory,
+                        file_field_name=file_field_name,
+                        file_size=file_size,
+                    )
+                    if content.total_bytes is not None:
+                        request_headers["Content-Length"] = str(content.total_bytes)
+                        length_computed = True
                 else:
                     request_headers.setdefault("Content-Type", content_type)
-                    content = stream_factory()
+                    content = RawUploadStream(stream_factory, file_size)
+                    if content.total_bytes is not None:
+                        request_headers["Content-Length"] = str(content.total_bytes)
+                        length_computed = True
+                if not length_computed:
+                    logger.warning(
+                        "Upload using chunked fallback: asset=%s method=%s file_field_name=%s",
+                        asset.name,
+                        method,
+                        file_field_name,
+                    )
                 response = await self.client.request(method, upload_url, headers=request_headers, content=content, timeout=timeout_seconds)
             except httpx.RequestError as exc:
                 if attempt == upload_attempts:
@@ -206,6 +314,13 @@ class GitCodeReleaseClient:
 
             if response.status_code in {401, 403}:
                 raise GitCodeAuthError()
+            if not length_computed:
+                logger.warning(
+                    "Upload chunked fallback response: asset=%s status=%s body=%s",
+                    asset.name,
+                    response.status_code,
+                    response.text[:200],
+                )
             if response.status_code >= 500 and attempt < upload_attempts:
                 await asyncio.sleep(settings.retry_delay_seconds)
                 continue
@@ -219,27 +334,3 @@ class GitCodeReleaseClient:
             except ValueError:
                 return response.text
         raise NetworkError(f"Upload failed for {asset.name}")
-
-    @staticmethod
-    async def _multipart_stream(
-        boundary: str,
-        form_fields: dict[str, str],
-        filename: str,
-        content_type: str,
-        stream_factory: Callable[[], AsyncIterator[bytes]],
-        file_field_name: str,
-    ) -> AsyncIterator[bytes]:
-        for key, value in form_fields.items():
-            yield (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="{key}"\r\n\r\n'
-                f"{value}\r\n"
-            ).encode("utf-8")
-        yield (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="{file_field_name}"; filename="{filename}"\r\n'
-            f"Content-Type: {content_type}\r\n\r\n"
-        ).encode("utf-8")
-        async for chunk in stream_factory():
-            yield chunk
-        yield f"\r\n--{boundary}--\r\n".encode("utf-8")
