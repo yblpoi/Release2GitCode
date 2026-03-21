@@ -16,7 +16,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     env:
-      API_SERVER_URL: ${{ vars.API_SERVER_URL }}
+      API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
       API_KEY: ${{ secrets.API_KEY }}
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
       GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
