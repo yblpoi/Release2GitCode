@@ -54,6 +54,7 @@ class ReleaseSyncService:
 
             processed = 0
             skipped = 0
+            total_bytes = 0
             failed_assets: list[str] = []
             progress_lock = Lock()
             semaphore = Semaphore(max(1, settings.sync_concurrency))
@@ -88,6 +89,7 @@ class ReleaseSyncService:
                 async with progress_lock:
                     if uploaded:
                         processed += 1
+                        total_bytes += asset.size
                         existing_assets.add(asset.name)
                         status = "completed"
                     else:
@@ -120,6 +122,7 @@ class ReleaseSyncService:
                 failed_assets=failed_assets,
                 total_assets=total_assets,
                 duration_seconds=time.time() - start_time,
+                total_bytes=total_bytes,
             )
             if serverchan3_sendkey:
                 try:
