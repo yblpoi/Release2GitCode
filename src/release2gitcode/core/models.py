@@ -98,6 +98,7 @@ class SyncResult(BaseModel):
     total_assets: int
     duration_seconds: float
     notification_warning: str | None = None
+    total_bytes: int = 0
 
     @property
     def is_success(self) -> bool:

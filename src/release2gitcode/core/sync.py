@@ -54,12 +54,13 @@ class ReleaseSyncService:
 
             processed = 0
             skipped = 0
+            total_bytes = 0
             failed_assets: list[str] = []
             progress_lock = Lock()
             semaphore = Semaphore(max(1, settings.sync_concurrency))
 
             async def handle_asset(asset_index: int, asset: GitHubAsset) -> None:
-                nonlocal processed, skipped
+                nonlocal processed, skipped, total_bytes
                 if asset.name in existing_assets:
                     async with progress_lock:
                         skipped += 1
@@ -88,6 +89,7 @@ class ReleaseSyncService:
                 async with progress_lock:
                     if uploaded:
                         processed += 1
+                        total_bytes += asset.size
                         existing_assets.add(asset.name)
                         status = "completed"
                     else:
@@ -120,6 +122,7 @@ class ReleaseSyncService:
                 failed_assets=failed_assets,
                 total_assets=total_assets,
                 duration_seconds=time.time() - start_time,
+                total_bytes=total_bytes,
             )
             if serverchan3_sendkey:
                 try:
