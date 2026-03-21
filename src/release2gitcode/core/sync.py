@@ -60,7 +60,7 @@ class ReleaseSyncService:
             semaphore = Semaphore(max(1, settings.sync_concurrency))
 
             async def handle_asset(asset_index: int, asset: GitHubAsset) -> None:
-                nonlocal processed, skipped
+                nonlocal processed, skipped, total_bytes
                 if asset.name in existing_assets:
                     async with progress_lock:
                         skipped += 1
