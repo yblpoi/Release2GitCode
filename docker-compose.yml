@@ -1,0 +1,26 @@
+services:
+  release2gitcode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: release2gitcode:latest
+    container_name: ${CONTAINER_NAME:-release2gitcode}
+    restart: unless-stopped
+    ports:
+      - "${PUBLISHED_PORT:-8000}:${PORT:-8000}"
+    environment:
+      HOST: ${HOST:-0.0.0.0}
+      PORT: ${PORT:-8000}
+      REQUIRE_HTTPS: ${REQUIRE_HTTPS:-false}
+      API_KEY: ${API_KEY:-}
+      API_KEY_HASH: ${API_KEY_HASH:-}
+      GITHUB_API_BASE: ${GITHUB_API_BASE:-https://api.github.com}
+      GITCODE_API_BASE: ${GITCODE_API_BASE:-https://api.gitcode.com/api/v5}
+      CHUNK_SIZE: ${CHUNK_SIZE:-1048576}
+      UPLOAD_ATTEMPTS: ${UPLOAD_ATTEMPTS:-5}
+      HTTP_TIMEOUT_SECONDS: ${HTTP_TIMEOUT_SECONDS:-30.0}
+      HTTP_MAX_CONNECTIONS: ${HTTP_MAX_CONNECTIONS:-100}
+      HTTP_MAX_KEEPALIVE_CONNECTIONS: ${HTTP_MAX_KEEPALIVE_CONNECTIONS:-20}
+      RETRY_DELAY_SECONDS: ${RETRY_DELAY_SECONDS:-1.0}
+    volumes:
+      - ${DATA_DIR:-./data}:/data
