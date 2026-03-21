@@ -1,54 +1,215 @@
 name: Sync Release To GitCode
 
 on:
-  release:
-    types:
-      - published
+  workflow_dispatch:
+    inputs:
+      github_release_url:
+        description: 'GitHub Release URL (e.g., https://github.com/owner/repo/releases/tag/v1.0.0)'
+        required: true
+        type: string
+      gitcode_repo_url:
+        description: 'GitCode repository URL (e.g., https://gitcode.com/owner/repo)'
+        required: true
+        type: string
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     env:
+      API_SERVER_URL: ${{ vars.API_SERVER_URL }}
+      API_KEY: ${{ secrets.API_KEY }}
       GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
-      GITCODE_REPO_URL: ${{ vars.GITCODE_REPO_URL }}
-      GITCODE_RELEASE_NAME: ${{ github.event.release.name }}
-      GITCODE_RELEASE_BODY: ${{ github.event.release.body }}
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Validate configuration
+        run: |
+          echo "Validating required configuration..."
+          
+          command -v jq >/dev/null 2>&1 || { echo "Error: jq command not found. Please ensure jq is installed." >&2; exit 1; }
+          
+          missing=()
+          for key in API_SERVER_URL API_KEY GITCODE_TOKEN; do
+            if [ -z "${!key}" ]; then
+              missing+=("$key")
+            fi
+          done
+          
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Error: Missing required configuration: ${missing[*]}" >&2
+            echo "Please set up following in your repository:" >&2
+            echo "  - API_SERVER_URL (repository variable)" >&2
+            echo "  - API_KEY (repository secret)" >&2
+            echo "  - GITCODE_TOKEN (repository secret)" >&2
+            exit 1
+          fi
+          
+          github_url="${{ inputs.github_release_url }}"
+          gitcode_url="${{ inputs.gitcode_repo_url }}"
+          
+          if [ -z "$github_url" ]; then
+            echo "Error: github_release_url is required" >&2
+            exit 1
+          fi
+          
+          if [ -z "$gitcode_url" ]; then
+            echo "Error: gitcode_repo_url is required" >&2
+            exit 1
+          fi
+          
+          if [[ ! "$github_url" =~ ^https://github\.com/[^/]+/[^/]+/releases/tag/[^/]+$ ]]; then
+            echo "Error: Invalid GitHub Release URL format" >&2
+            echo "Expected format: https://github.com/owner/repo/releases/tag/v1.0.0" >&2
+            exit 1
+          fi
+          
+          if [[ ! "$gitcode_url" =~ ^https://gitcode\.com/[^/]+/[^/]+$ ]]; then
+            echo "Error: Invalid GitCode repository URL format" >&2
+            echo "Expected format: https://gitcode.com/owner/repo" >&2
+            exit 1
+          fi
+          
+          echo "Configuration validated successfully"
+          echo "API Server: $API_SERVER_URL"
+          echo "GitHub Release URL: $github_url"
+          echo "GitCode Repository URL: $gitcode_url"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      - name: Validate release assets directory
-        shell: bash
+      - name: Install cryptography
+        run: pip install cryptography
+
+      - name: Get public key from API server
+        id: get_public_key
         run: |
-          if [ ! -d "release_assets" ]; then
-            echo "release_assets/ directory does not exist." >&2
+          echo "Fetching public key from API server..."
+          
+          response=$(curl -s -w "\n%{http_code}" \
+            -H "X-API-Key: $API_KEY" \
+            "$API_SERVER_URL/api/v1/public-key")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          if [ "$http_code" -ne 200 ]; then
+            echo "Error: Failed to get public key (HTTP $http_code)" >&2
+            echo "Response: $body" >&2
             exit 1
           fi
-
-          if ! find release_assets -maxdepth 1 -type f | grep -q .; then
-            echo "No release files found under release_assets/." >&2
+          
+          public_key=$(echo "$body" | jq -r '.public_key')
+          key_id=$(echo "$body" | jq -r '.key_id')
+          
+          if [ "$public_key" = "null" ] || [ -z "$public_key" ]; then
+            echo "Error: Invalid response - public_key not found" >&2
             exit 1
           fi
+          
+          echo "Public key retrieved successfully (key_id: $key_id)"
+          echo "PUBLIC_KEY<<EOF" >> $GITHUB_OUTPUT
+          echo "$public_key" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Validate GitCode configuration
-        shell: bash
+      - name: Encrypt GitCode token
+        id: encrypt_token
         run: |
-          missing=()
-          for key in GITCODE_TOKEN GITCODE_REPO_URL; do
-            if [ -z "${!key}" ]; then
-              missing+=("$key")
-            fi
-          done
+          echo "Encrypting GitCode token..."
+          
+          python3 << 'PYTHON_SCRIPT'
+          import os
+          import base64
+          import json
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives import serialization, hashes
+          
+          public_key_pem = os.environ['PUBLIC_KEY']
+          gitcode_token = os.environ['GITCODE_TOKEN']
+          
+          public_key = serialization.load_pem_public_key(
+              public_key_pem.encode('utf-8')
+          )
+          
+          encrypted = public_key.encrypt(
+              gitcode_token.encode('utf-8'),
+              padding.OAEP(
+                  mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                  algorithm=hashes.SHA256(),
+                  label=None
+              )
+          )
+          
+          encrypted_b64 = base64.b64encode(encrypted).decode('utf-8')
+          
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'encrypted_token={encrypted_b64}\n')
+          PYTHON_SCRIPT
+          
+          echo "Token encrypted successfully"
 
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "Missing required GitCode configuration: ${missing[*]}" >&2
+      - name: Submit sync request to API server
+        id: submit_sync
+        run: |
+          echo "Submitting sync request to API server..."
+          
+          github_url="${{ inputs.github_release_url }}"
+          gitcode_url="${{ inputs.gitcode_repo_url }}"
+          encrypted_token="${{ steps.encrypt_token.outputs.encrypted_token }}"
+          
+          request_body=$(jq -n \
+            --arg github_url "$github_url" \
+            --arg gitcode_url "$gitcode_url" \
+            --arg encrypted_token "$encrypted_token" \
+            '{
+              github_release_url: $github_url,
+              gitcode_repo_url: $gitcode_url,
+              encrypted_gitcode_token: $encrypted_token
+            }')
+          
+          echo "Request prepared for:"
+          echo "  GitHub Release: $github_url"
+          echo "  GitCode Repo: $gitcode_url"
+          
+          response=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            -H "X-API-Key: $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$request_body" \
+            "$API_SERVER_URL/api/v1/sync")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          if [ "$http_code" -ne 200 ]; then
+            echo "Error: Failed to submit sync request (HTTP $http_code)" >&2
+            echo "Response: $body" >&2
             exit 1
           fi
+          
+          task_id=$(echo "$body" | jq -r '.task_id')
+          status=$(echo "$body" | jq -r '.status')
+          message=$(echo "$body" | jq -r '.message')
+          
+          echo "Sync request submitted successfully!"
+          echo "Task ID: $task_id"
+          echo "Status: $status"
+          echo "Message: $message"
+          echo ""
+          echo "The sync task is now running on the API server."
+          echo "You can track the task using the Task ID: $task_id"
+          
+          echo "task_id=$task_id" >> $GITHUB_OUTPUT
+          echo "status=$status" >> $GITHUB_OUTPUT
+          echo "message=$message" >> $GITHUB_OUTPUT
 
-      - name: Upload artifacts to GitCode
-        run: python scripts/upload_to_gitcode.py
+      - name: Summary
+        run: |
+          echo "## Sync Request Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Task ID:** \`${{ steps.submit_sync.outputs.task_id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.submit_sync.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Message:** ${{ steps.submit_sync.outputs.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The sync task is running asynchronously on the API server." >> $GITHUB_STEP_SUMMARY
+          echo "This workflow has completed successfully after submitting the request." >> $GITHUB_STEP_SUMMARY
