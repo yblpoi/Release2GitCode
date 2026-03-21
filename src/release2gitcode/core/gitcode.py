@@ -127,9 +127,11 @@ class GitCodeReleaseClient:
         )
 
     @staticmethod
-    def _extract_upload_target(upload_response: dict[str, Any] | str) -> tuple[str, str, dict[str, str], dict[str, str] | None, str | None]:
+    def _extract_upload_target(
+        upload_response: dict[str, Any] | str,
+    ) -> tuple[str, str, dict[str, str], dict[str, str] | None, str | None, str]:
         if isinstance(upload_response, str):
-            return upload_response, "PUT", {}, None, "file_name"
+            return upload_response, "PUT", {}, None, "file_name", "file"
         upload_url = str(upload_response.get("upload_url") or upload_response.get("url") or "")
         if not upload_url:
             raise NetworkError("Upload URL missing in response")
@@ -144,7 +146,8 @@ class GitCodeReleaseClient:
             filename_query_key = "file_name"
         if filename_query_key is not None:
             filename_query_key = str(filename_query_key)
-        return upload_url, str(upload_response.get("method") or "PUT").upper(), dict(headers), form_fields, filename_query_key
+        file_field_name = upload_response.get("file_field_name") or upload_response.get("file_field") or "file"
+        return upload_url, str(upload_response.get("method") or "PUT").upper(), dict(headers), form_fields, filename_query_key, str(file_field_name)
 
     @staticmethod
     def _append_filename_query(url: str, filename: str, query_key: str | None) -> str:
@@ -178,7 +181,7 @@ class GitCodeReleaseClient:
         timeout_seconds: float | None,
     ) -> Any:
         upload_response = await self.get_upload_target(tag, asset.name)
-        upload_url, method, headers, form_fields, filename_query_key = self._extract_upload_target(upload_response)
+        upload_url, method, headers, form_fields, filename_query_key, file_field_name = self._extract_upload_target(upload_response)
         upload_url = self._append_filename_query(upload_url, asset.name, filename_query_key)
         content_type = mimetypes.guess_type(asset.name)[0] or "application/octet-stream"
         request_headers = {"User-Agent": "Release2GitCode/3.0", **headers}
@@ -188,14 +191,16 @@ class GitCodeReleaseClient:
                 if form_fields:
                     boundary = f"----Release2GitCode{asset.id or 'upload'}"
                     request_headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
-                    content = self._multipart_stream(boundary, form_fields, asset.name, content_type, stream_factory)
+                    content = self._multipart_stream(boundary, form_fields, asset.name, content_type, stream_factory, file_field_name)
                 else:
                     request_headers.setdefault("Content-Type", content_type)
                     content = stream_factory()
                 response = await self.client.request(method, upload_url, headers=request_headers, content=content, timeout=timeout_seconds)
             except httpx.RequestError as exc:
                 if attempt == upload_attempts:
-                    raise NetworkError(f"Upload failed for {asset.name}: {exc}") from exc
+                    raise NetworkError(
+                        f"Upload failed for {asset.name}: method={method} file_field_name={file_field_name} error={exc}"
+                    ) from exc
                 await asyncio.sleep(settings.retry_delay_seconds)
                 continue
 
@@ -205,7 +210,10 @@ class GitCodeReleaseClient:
                 await asyncio.sleep(settings.retry_delay_seconds)
                 continue
             if response.status_code >= 400:
-                raise NetworkError(f"Upload failed for {asset.name}: HTTP {response.status_code} {response.text[:200]}")
+                raise NetworkError(
+                    f"Upload failed for {asset.name}: method={method} file_field_name={file_field_name} "
+                    f"HTTP {response.status_code} {response.text[:200]}"
+                )
             try:
                 return response.json() if response.content else None
             except ValueError:
@@ -219,6 +227,7 @@ class GitCodeReleaseClient:
         filename: str,
         content_type: str,
         stream_factory: Callable[[], AsyncIterator[bytes]],
+        file_field_name: str,
     ) -> AsyncIterator[bytes]:
         for key, value in form_fields.items():
             yield (
@@ -228,7 +237,7 @@ class GitCodeReleaseClient:
             ).encode("utf-8")
         yield (
             f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            f'Content-Disposition: form-data; name="{file_field_name}"; filename="{filename}"\r\n'
             f"Content-Type: {content_type}\r\n\r\n"
         ).encode("utf-8")
         async for chunk in stream_factory():
