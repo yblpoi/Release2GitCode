@@ -18,7 +18,7 @@ class SyncRequest(BaseModel):
     github_release_url: HttpUrl
     gitcode_repo_url: HttpUrl
     encrypted_gitcode_token: str
-    encrypted_github_token: str | None = None
+    encrypted_GH_TOKEN: str | None = None
     encrypted_serverchan3_sendkey: str | None = None
 
     @field_validator("github_release_url")

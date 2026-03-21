@@ -17,9 +17,9 @@
   - `release2gitcode sync-github`
   - `release2gitcode encrypt`
 - 服务端 `/api/v1/sync` 新增可选字段 `encrypted_serverchan3_sendkey`。
-- 服务端 `/api/v1/sync` 新增可选字段 `encrypted_github_token`，用于带认证访问 GitHub Release API。
+- 服务端 `/api/v1/sync` 新增可选字段 `encrypted_GH_TOKEN`，用于带认证访问 GitHub Release API。
 - GitHub Actions 工作流支持从 `SERVERCHAN3_SENDKEY` Secret 读取并加密传输可选通知密钥。
-- GitHub Actions 工作流支持从 `GITHUB_TOKEN` Secret 读取并加密传输可选 GitHub API 令牌。
+- GitHub Actions 工作流支持从 `GH_TOKEN` Secret 读取并加密传输可选 GitHub API 令牌。
 - 服务端支持同步完成后通过 ServerChan3 推送结果。
 
 ### 性能与实现

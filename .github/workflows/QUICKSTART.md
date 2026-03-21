@@ -12,7 +12,7 @@ docker run -d -p 8000:8000 -e REQUIRE_HTTPS=false -e API_KEY=YOUR_64_CHAR_API_KE
 ### Secrets
 
 - `API_KEY`
-- `GITHUB_TOKEN`（可选）
+- `GH_TOKEN`（可选）
 - `GITCODE_TOKEN`
 - `SERVERCHAN3_SENDKEY`（可选）
 

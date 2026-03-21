@@ -23,7 +23,7 @@ class ReleaseSyncService:
         github_release_url: str,
         gitcode_repo_url: str,
         gitcode_token: str,
-        github_token: str | None = None,
+        GH_TOKEN: str | None = None,
         task_id: str | None = None,
         serverchan3_sendkey: str | None = None,
     ) -> SyncResult:
@@ -39,7 +39,7 @@ class ReleaseSyncService:
                 owner,
                 repo,
                 tag,
-                github_token=github_token,
+                GH_TOKEN=GH_TOKEN,
             )
             gitcode = GitCodeReleaseClient(client, gitcode_token, gitcode_ref.owner, gitcode_ref.repo)
             release = await gitcode.ensure_release(release_info.tag_name, release_info.name, release_info.body)

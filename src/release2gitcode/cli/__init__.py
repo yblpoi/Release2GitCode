@@ -92,7 +92,7 @@ async def _run(args: argparse.Namespace) -> int:
             github_release_url=args.github_release_url,
             gitcode_repo_url=args.gitcode_repo_url,
             gitcode_token=args.gitcode_token,
-            github_token=args.github_token or os.getenv("GITHUB_TOKEN", "").strip() or None,
+            GH_TOKEN=args.GH_TOKEN or os.getenv("GH_TOKEN", "").strip() or None,
             serverchan3_sendkey=args.serverchan3_sendkey,
         )
         print(f"Completed sync. processed={result.processed_assets} skipped={result.skipped_assets} failed={len(result.failed_assets)}")

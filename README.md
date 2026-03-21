@@ -75,7 +75,7 @@ release2gitcode sync-github \
   --github-release-url https://github.com/owner/repo/releases/tag/v1.0.0 \
   --gitcode-repo-url https://gitcode.com/owner/repo \
   --gitcode-token YOUR_GITCODE_TOKEN \
-  --github-token YOUR_GITHUB_TOKEN
+  --github-token YOUR_GH_TOKEN
 ```
 
 ### 2. 上传本地构建产物到 GitCode Release
@@ -262,7 +262,7 @@ Store it securely before restarting:
 {
   "github_release_url": "https://github.com/owner/repo/releases/tag/v1.0.0",
   "gitcode_repo_url": "https://gitcode.com/owner/repo",
-  "encrypted_github_token": "base64-rsa-ciphertext",
+  "encrypted_GH_TOKEN": "base64-rsa-ciphertext",
   "encrypted_gitcode_token": "base64-rsa-ciphertext",
   "encrypted_serverchan3_sendkey": "base64-rsa-ciphertext"
 }
@@ -271,7 +271,7 @@ Store it securely before restarting:
 其中：
 
 - `encrypted_gitcode_token` 必填。
-- `encrypted_github_token` 可选，提供后服务端会用它访问 GitHub Release API。
+- `encrypted_GH_TOKEN` 可选，提供后服务端会用它访问 GitHub Release API。
 - `encrypted_serverchan3_sendkey` 可选。
 - 如果未提供 `encrypted_serverchan3_sendkey`，同步照常进行，只是不会推送通知。
 
@@ -286,7 +286,7 @@ Store it securely before restarting:
 | 类型 | 名称 | 必填 | 说明 |
 |---|---|---|---|
 | Secret | `API_KEY` | 是 | 服务端 API 认证密钥 |
-| Secret | `GITHUB_TOKEN` | 否 | GitHub API 令牌，用于更高速率限制或访问私有仓库 |
+| Secret | `GH_TOKEN` | 否 | GitHub API 令牌，用于更高速率限制或访问私有仓库 |
 | Secret | `GITCODE_TOKEN` | 是 | GitCode 访问令牌 |
 | Secret | `SERVERCHAN3_SENDKEY` | 否 | ServerChan3 推送密钥 |
 | Variable | `API_SERVER_URL` | 是 | 部署后的 API 服务地址 |
@@ -294,7 +294,7 @@ Store it securely before restarting:
 工作流流程：
 
 1. 获取服务端公钥。
-2. 如果存在 `GITHUB_TOKEN`，先加密并附带提交。
+2. 如果存在 `GH_TOKEN`，先加密并附带提交。
 3. 使用 `release2gitcode encrypt` 加密 `GITCODE_TOKEN`。
 4. 如果存在 `SERVERCHAN3_SENDKEY`，同样加密。
 5. 提交 `/api/v1/sync` 请求。
@@ -339,7 +339,7 @@ Store it securely before restarting:
 当前实现规则：
 
 - GitHub Actions 从 Secret `SERVERCHAN3_SENDKEY` 读取可选密钥。
-- `GITHUB_TOKEN`、`GITCODE_TOKEN`、`SERVERCHAN3_SENDKEY` 都先向服务端获取公钥，再加密后传输。
+- `GH_TOKEN`、`GITCODE_TOKEN`、`SERVERCHAN3_SENDKEY` 都先向服务端获取公钥，再加密后传输。
 - 服务端在同步结束后调用 `https://<uid>.push.ft07.com/send/<sendkey>.send`。
 - 推送失败不会影响主同步结果，只会附加告警信息。
 
@@ -359,7 +359,7 @@ pytest
   - 说明机密不是用当前服务端返回的公钥加密的，或密文损坏。
 - `503 network_error`
   - 检查 GitHub API、GitCode API、ServerChan3 网络连通性。
-  - 如果 GitHub 返回 rate limit exceeded，优先配置 `GITHUB_TOKEN`。
+  - 如果 GitHub 返回 rate limit exceeded，优先配置 `GH_TOKEN`。
 - GitHub Actions 成功但没有推送通知
   - 检查是否配置了 `SERVERCHAN3_SENDKEY`。
   - 检查 SendKey 是否对应正确 `uid`。

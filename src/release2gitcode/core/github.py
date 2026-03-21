@@ -28,7 +28,7 @@ async def get_release_info(
     owner: str,
     repo: str,
     tag: str,
-    github_token: str | None = None,
+    GH_TOKEN: str | None = None,
 ) -> GitHubReleaseInfo:
     url = f"{github_api_base}/repos/{owner}/{repo}/releases/tags/{tag}"
     headers = {
@@ -36,8 +36,8 @@ async def get_release_info(
         "User-Agent": "Release2GitCode/3.0",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    if github_token:
-        headers["Authorization"] = f"Bearer {github_token}"
+    if GH_TOKEN:
+        headers["Authorization"] = f"Bearer {GH_TOKEN}"
     try:
         response = await client.get(url, headers=headers)
     except httpx.RequestError as exc:

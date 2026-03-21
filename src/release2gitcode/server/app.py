@@ -80,7 +80,7 @@ def create_app() -> FastAPI:
         rsa_manager = get_rsa_key_manager()
         try:
             gitcode_token = rsa_manager.decrypt(payload.encrypted_gitcode_token)
-            github_token = rsa_manager.decrypt(payload.encrypted_github_token) if payload.encrypted_github_token else None
+            GH_TOKEN = rsa_manager.decrypt(payload.encrypted_GH_TOKEN) if payload.encrypted_GH_TOKEN else None
             sendkey = rsa_manager.decrypt(payload.encrypted_serverchan3_sendkey) if payload.encrypted_serverchan3_sendkey else None
         except AppError as exc:
             logger.log_token_decrypt_failed(task_id, client_ip, api_key, exc.message)
@@ -91,7 +91,7 @@ def create_app() -> FastAPI:
                 github_release_url=github_url,
                 gitcode_repo_url=gitcode_url,
                 gitcode_token=gitcode_token,
-                github_token=github_token,
+                GH_TOKEN=GH_TOKEN,
                 task_id=task_id,
                 serverchan3_sendkey=sendkey,
             )
