@@ -325,7 +325,7 @@ Store it securely before restarting:
 | Secret | `GH_TOKEN` | 否 | GitHub API 令牌，用于更高速率限制或访问私有仓库 |
 | Secret | `GITCODE_TOKEN` | 是 | GitCode 访问令牌 |
 | Secret | `SERVERCHAN3_SENDKEY` | 否 | ServerChan3 推送密钥 |
-| Variable | `API_SERVER_URL` | 是 | 部署后的 API 服务地址 |
+| Secret | `API_SERVER_URL` | 是 | 部署后的 API 服务地址 |
 
 工作流流程：
 
