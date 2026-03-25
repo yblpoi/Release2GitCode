@@ -13,6 +13,7 @@ import httpx
 
 from release2gitcode.core.config import settings
 from release2gitcode.core.errors import GitCodeAuthError, InvalidGitCodeURLError, NetworkError
+from release2gitcode.core.logger import get_security_logger
 from release2gitcode.core.models import GitCodeRepoRef, GitHubAsset
 
 
@@ -145,7 +146,9 @@ class GitCodeReleaseClient:
         except httpx.RequestError as exc:
             raise NetworkError(f"GitCode request failed: {exc}") from exc
         if response.status_code in {401, 403}:
-            raise GitCodeAuthError()
+            if response.status_code == 401:
+                raise GitCodeAuthError("GitCode token is invalid or expired")
+            raise GitCodeAuthError("GitCode token has no write permission for this repository")
         if response.status_code >= 400:
             raise NetworkError(f"GitCode request failed: HTTP {response.status_code} {response.text[:200]}")
         try:
@@ -164,10 +167,51 @@ class GitCodeReleaseClient:
         if response.status_code == 400 and "404 Release Not Found" in response.text:
             return None
         if response.status_code in {401, 403}:
-            raise GitCodeAuthError()
+            if response.status_code == 401:
+                raise GitCodeAuthError("GitCode token is invalid or expired")
+            raise GitCodeAuthError("GitCode token has no write permission for this repository")
         if response.status_code >= 400:
             raise NetworkError(f"Failed to check release: HTTP {response.status_code}")
         return response.json()
+
+    async def validate_release_write_access(self, tag: str, *, request_id: str = "-") -> None:
+        repo = f"{self.owner}/{self.repo}"
+        security_logger = get_security_logger()
+        probe_name = f".r2gc-permission-check-{parse.quote(tag, safe='')}.txt"
+        try:
+            await self._request_json(
+                "GET",
+                self._release_url(f"/{parse.quote(tag, safe='')}/upload_url"),
+                params={"file_name": probe_name},
+            )
+        except GitCodeAuthError as exc:
+            security_logger.log_permission_check(
+                request_id,
+                repo=repo,
+                tag=tag,
+                permission_check_result="auth_failed",
+                success=False,
+                detail=str(exc),
+            )
+            raise
+        except Exception as exc:
+            security_logger.log_permission_check(
+                request_id,
+                repo=repo,
+                tag=tag,
+                permission_check_result="probe_failed",
+                success=False,
+                detail=str(exc),
+            )
+            raise
+        security_logger.log_permission_check(
+            request_id,
+            repo=repo,
+            tag=tag,
+            permission_check_result="passed",
+            success=True,
+            detail="Release upload permission precheck passed",
+        )
 
     async def ensure_release(self, tag: str, name: str | None, body: str | None, target_branch: str | None = None) -> dict[str, Any]:
         existing = await self.get_release_by_tag(tag)
@@ -326,7 +370,9 @@ class GitCodeReleaseClient:
                 f"{throughput_mbps:.2f} MB/s" if throughput_mbps is not None else "unknown",
             )
             if response.status_code in {401, 403}:
-                raise GitCodeAuthError()
+                if response.status_code == 401:
+                    raise GitCodeAuthError("GitCode token is invalid or expired")
+                raise GitCodeAuthError("GitCode token has no write permission for this repository")
             if not length_computed:
                 logger.warning(
                     "Upload chunked fallback response: asset=%s status=%s body=%s",

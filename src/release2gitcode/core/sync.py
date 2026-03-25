@@ -48,6 +48,7 @@ class ReleaseSyncService:
                 GH_TOKEN=GH_TOKEN,
             )
             gitcode = GitCodeReleaseClient(client, gitcode_token, gitcode_ref.owner, gitcode_ref.repo)
+            await gitcode.validate_release_write_access(release_info.tag_name, request_id=task_id)
             release = await gitcode.ensure_release(release_info.tag_name, release_info.name, release_info.body)
             existing_assets = gitcode.get_existing_asset_names(release)
             total_assets = len(release_info.assets)
@@ -138,6 +139,7 @@ class ReleaseSyncService:
         gitcode_ref = parse_gitcode_repo_url(config.repo_url)
         async with build_async_client() as client:
             gitcode = GitCodeReleaseClient(client, config.token, gitcode_ref.owner, gitcode_ref.repo)
+            await gitcode.validate_release_write_access(config.tag, request_id=task_id)
             release = await gitcode.ensure_release(
                 config.tag,
                 config.release_name,

@@ -181,6 +181,29 @@ class SecurityLogger:
             },
         )
 
+    def log_permission_check(
+        self,
+        request_id: str,
+        *,
+        repo: str,
+        tag: str,
+        permission_check_result: str,
+        success: bool,
+        detail: str = "",
+    ) -> None:
+        self._log(
+            event_type="permission_check",
+            request_id=request_id,
+            client_ip="-",
+            success=success,
+            message=detail or f"Permission check {permission_check_result} for {repo}@{tag}",
+            extra={
+                "repo": repo,
+                "tag": tag,
+                "permission_check_result": permission_check_result,
+            },
+        )
+
     @staticmethod
     def _format_duration(seconds: float) -> str:
         total_seconds = max(int(round(seconds)), 0)
