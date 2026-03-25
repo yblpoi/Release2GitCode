@@ -111,19 +111,20 @@ class ReleaseSyncService:
                     )
 
             try:
-                await asyncio.gather(
-                    *(handle_asset(asset_index, asset) for asset_index, asset in enumerate(release_info.assets, start=1))
-                )
-            except GitCodeAuthError as exc:
-                failed_asset_name = getattr(exc, "asset_name", "unknown")
-                failed_http_status = getattr(exc, "http_status", getattr(exc, "status_code", None))
+                async with asyncio.TaskGroup() as task_group:
+                    for asset_index, asset in enumerate(release_info.assets, start=1):
+                        task_group.create_task(handle_asset(asset_index, asset))
+            except* GitCodeAuthError as exc_group:
+                auth_error = exc_group.exceptions[0]
+                failed_asset_name = getattr(auth_error, "asset_name", "unknown")
+                failed_http_status = getattr(auth_error, "http_status", getattr(auth_error, "status_code", None))
                 logger.log_auth_failed_abort_sync(
                     task_id,
                     asset_name=failed_asset_name,
                     http_status=failed_http_status,
-                    detail=str(exc),
+                    detail=str(auth_error),
                 )
-                raise
+                raise auth_error
 
             result = SyncResult(
                 task_id=task_id,
