@@ -250,6 +250,26 @@ class SecurityLogger:
             message=error,
         )
 
+    def log_auth_failed_abort_sync(
+        self,
+        request_id: str,
+        *,
+        asset_name: str,
+        http_status: int | None,
+        detail: str,
+    ) -> None:
+        self._log(
+            event_type="auth_failed_abort_sync",
+            request_id=request_id,
+            client_ip="-",
+            success=False,
+            message=detail,
+            extra={
+                "asset_name": asset_name,
+                "http_status": http_status,
+            },
+        )
+
 
 _logger: SecurityLogger | None = None
 

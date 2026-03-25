@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from release2gitcode.core.config import discover_default_assets, getenv_str, parse_multiline_files_env, settings
+from release2gitcode.core.errors import GitCodeAuthError, NetworkError
 from release2gitcode.core.github import get_release_info, parse_github_release_url
 from release2gitcode.core.gitcode import GitCodeReleaseClient, parse_gitcode_repo_url
 from release2gitcode.core.http import build_async_client
@@ -109,9 +110,20 @@ class ReleaseSyncService:
                         start_time=start_time,
                     )
 
-            await asyncio.gather(
-                *(handle_asset(asset_index, asset) for asset_index, asset in enumerate(release_info.assets, start=1))
-            )
+            try:
+                await asyncio.gather(
+                    *(handle_asset(asset_index, asset) for asset_index, asset in enumerate(release_info.assets, start=1))
+                )
+            except GitCodeAuthError as exc:
+                failed_asset_name = getattr(exc, "asset_name", "unknown")
+                failed_http_status = getattr(exc, "http_status", getattr(exc, "status_code", None))
+                logger.log_auth_failed_abort_sync(
+                    task_id,
+                    asset_name=failed_asset_name,
+                    http_status=failed_http_status,
+                    detail=str(exc),
+                )
+                raise
 
             result = SyncResult(
                 task_id=task_id,
@@ -205,6 +217,15 @@ class ReleaseSyncService:
                 throughput_mbps=throughput_mbps,
             )
             return True
+        except GitCodeAuthError as exc:
+            if not hasattr(exc, "asset_name"):
+                setattr(exc, "asset_name", asset.name)
+            if not hasattr(exc, "http_status"):
+                http_status = 401 if "invalid or expired" in str(exc) else 403 if "no write permission" in str(exc) else exc.status_code
+                setattr(exc, "http_status", http_status)
+            raise
+        except NetworkError:
+            return False
         except Exception:
             return False
 
