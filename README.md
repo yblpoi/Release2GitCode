@@ -275,14 +275,19 @@ Store it securely before restarting:
 | `API_KEY` | 条件必填 | - | Server | 明文 API Key，仅用于首次启动计算哈希 |
 | `API_KEY_HASH` | 条件必填 | - | Server | 已计算好的 bcrypt 哈希；优先级高于持久化文件 |
 | `GITHUB_API_BASE` | 否 | `https://api.github.com` | Core | GitHub API 基地址 |
+| `GITHUB_DOWNLOAD_USER_AGENT` | 否 | `Release2GitCode/3.0 (github-release-sync)` | Core | GitHub 资产下载请求头的 User-Agent（建议使用真实标识，不要伪装第三方下载器） |
 | `GITCODE_API_BASE` | 否 | `https://api.gitcode.com/api/v5` | Core | GitCode API 基地址 |
 | `CHUNK_SIZE` | 否 | `1048576` | Core | 流式分块大小 |
 | `UPLOAD_ATTEMPTS` | 否 | `5` | Core | 上传重试次数 |
+| `GITHUB_MAX_RETRIES` | 否 | `5` | Core | GitHub API/下载限流时的最大重试次数 |
 | `HTTP_TIMEOUT_SECONDS` | 否 | `30.0` | Core | 默认 HTTP 超时 |
-| `HTTP_MAX_CONNECTIONS` | 否 | `100` | Core | 连接池最大连接数 |
+| `HTTP_MAX_CONNECTIONS` | 否 | `20` | Core | 连接池最大连接数 |
 | `HTTP_MAX_KEEPALIVE_CONNECTIONS` | 否 | `20` | Core | Keep-alive 连接数 |
 | `RETRY_DELAY_SECONDS` | 否 | `1.0` | Core | 重试等待秒数 |
+| `GITHUB_BACKOFF_BASE_SECONDS` | 否 | `1.0` | Core | GitHub 限流指数退避起始秒数 |
+| `GITHUB_BACKOFF_MAX_SECONDS` | 否 | `60.0` | Core | GitHub 限流指数退避最大秒数 |
 | `SYNC_CONCURRENCY` | 否 | `3` | Core | GitHub 资源并发同步数（用于提升总吞吐） |
+| `SYNC_MAX_ACTIVE_TASKS` | 否 | `2` | Server | 服务端可同时执行的同步任务数（全局限流） |
 | `SERVER_LOG_LEVEL` | 否 | `info` | Server | Uvicorn 日志等级 |
 | `SERVER_ACCESS_LOG` | 否 | `true` | Server | 是否输出 Uvicorn Access Log |
 
