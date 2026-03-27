@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     github_backoff_max_seconds: float = 60.0
     sync_concurrency: int = 3
     sync_max_active_tasks: int = 2
+    adaptive_sync_enabled: bool = True
+    adaptive_sync_max_concurrency: int = 3
+    adaptive_sync_window_size: int = 10
+    adaptive_sync_high_ratio: float = 0.2
+    adaptive_sync_medium_ratio: float = 0.1
     server_log_level: str = "info"
     server_access_log: bool = True
     model_config = SettingsConfigDict(env_prefix="", case_sensitive=False)
