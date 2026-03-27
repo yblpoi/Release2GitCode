@@ -6,7 +6,8 @@ import os
 import time
 import uuid
 import asyncio
-from asyncio import Lock, Semaphore
+from asyncio import Condition, Lock
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import AsyncIterator
@@ -18,6 +19,35 @@ from release2gitcode.core.http import build_async_client, sleep_for_github_backo
 from release2gitcode.core.logger import get_security_logger
 from release2gitcode.core.models import GitHubAsset, LocalUploadConfig, SyncResult
 from release2gitcode.core.notifications import send_serverchan_notification
+
+
+class AdaptiveConcurrencyLimiter:
+    def __init__(self, initial_concurrency: int) -> None:
+        self._target = max(1, initial_concurrency)
+        self._active = 0
+        self._condition = Condition()
+
+    @property
+    def target(self) -> int:
+        return self._target
+
+    async def acquire(self) -> None:
+        async with self._condition:
+            while self._active >= self._target:
+                await self._condition.wait()
+            self._active += 1
+
+    async def release(self) -> None:
+        async with self._condition:
+            self._active = max(self._active - 1, 0)
+            self._condition.notify_all()
+
+    async def set_target(self, value: int) -> int:
+        async with self._condition:
+            previous = self._target
+            self._target = max(1, value)
+            self._condition.notify_all()
+            return previous
 
 
 class ReleaseSyncService:
@@ -57,7 +87,12 @@ class ReleaseSyncService:
             total_bytes = 0
             failed_assets: list[str] = []
             progress_lock = Lock()
-            semaphore = Semaphore(max(1, settings.sync_concurrency))
+            max_sync_concurrency = max(1, settings.sync_concurrency)
+            adaptive_upper_bound = max(1, settings.adaptive_sync_max_concurrency)
+            initial_concurrency = min(max_sync_concurrency, adaptive_upper_bound)
+            limiter = AdaptiveConcurrencyLimiter(initial_concurrency)
+            adaptive_window: deque[bool] = deque(maxlen=max(1, settings.adaptive_sync_window_size))
+            adaptive_lock = Lock()
             github_headers = {
                 "Accept": "application/octet-stream, */*",
                 "User-Agent": settings.github_download_user_agent,
@@ -65,6 +100,34 @@ class ReleaseSyncService:
             }
             if GH_TOKEN:
                 github_headers["Authorization"] = f"Bearer {GH_TOKEN}"
+
+            async def update_adaptive_concurrency(rate_limited: bool) -> None:
+                if not settings.adaptive_sync_enabled:
+                    return
+
+                async with adaptive_lock:
+                    adaptive_window.append(rate_limited)
+                    rate_limited_events = sum(1 for flagged in adaptive_window if flagged)
+                    ratio = rate_limited_events / len(adaptive_window)
+                    current_target = limiter.target
+
+                    if ratio >= settings.adaptive_sync_high_ratio:
+                        desired_target = 1
+                    elif ratio >= settings.adaptive_sync_medium_ratio:
+                        desired_target = 2
+                    else:
+                        desired_target = 3
+
+                    desired_target = min(desired_target, max_sync_concurrency, adaptive_upper_bound)
+                    previous = await limiter.set_target(desired_target) if desired_target != current_target else current_target
+                    logger.log_adaptive_sync(
+                        task_id,
+                        window_size=len(adaptive_window),
+                        rate_limited_events=rate_limited_events,
+                        ratio=ratio,
+                        concurrency_before=previous,
+                        concurrency_after=desired_target,
+                    )
 
             async def handle_asset(asset_index: int, asset: GitHubAsset) -> None:
                 nonlocal processed, skipped, total_bytes
@@ -85,14 +148,19 @@ class ReleaseSyncService:
                         )
                     return
 
-                async with semaphore:
-                    uploaded = await self._upload_github_asset(
+                await limiter.acquire()
+                try:
+                    uploaded, rate_limited = await self._upload_github_asset(
                         gitcode=gitcode,
                         tag=release_info.tag_name,
                         asset=asset,
                         task_id=task_id,
                         github_headers=github_headers,
                     )
+                finally:
+                    await limiter.release()
+
+                await update_adaptive_concurrency(rate_limited)
 
                 async with progress_lock:
                     if uploaded:
@@ -182,16 +250,20 @@ class ReleaseSyncService:
         asset: GitHubAsset,
         task_id: str,
         github_headers: dict[str, str],
-    ) -> bool:
+    ) -> tuple[bool, bool]:
         logger = get_security_logger()
+        rate_limited = False
 
         async def stream_factory() -> AsyncIterator[bytes]:
+            nonlocal rate_limited
             response = None
             for attempt in range(1, settings.github_max_retries + 1):
                 response = await gitcode.client.send(
                     gitcode.client.build_request("GET", asset.browser_download_url, headers=github_headers),
                     stream=True,
                 )
+                if response.status_code in {403, 429}:
+                    rate_limited = True
                 if response.status_code not in {403, 429} or attempt >= settings.github_max_retries:
                     break
                 await response.aclose()
@@ -215,7 +287,7 @@ class ReleaseSyncService:
                 asset,
                 stream_factory,
                 upload_attempts=settings.upload_attempts,
-                timeout_seconds=None,
+                timeout_seconds=settings.http_timeout_seconds,
             )
             duration = time.time() - started_at
             throughput_mbps = asset.size / (1024 * 1024) / duration if asset.size > 0 and duration > 0 else None
@@ -227,9 +299,15 @@ class ReleaseSyncService:
                 duration_seconds=duration,
                 throughput_mbps=throughput_mbps,
             )
-            return True
-        except Exception:
-            return False
+            return True, rate_limited
+        except Exception as exc:
+            logger.log_sync_failed(
+                task_id,
+                client_ip="-",
+                api_key="",
+                reason=f"Asset upload failed: {asset.name}; reason={exc}",
+            )
+            return False, rate_limited
 
     @staticmethod
     def _log_progress(

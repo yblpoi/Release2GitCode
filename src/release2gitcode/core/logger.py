@@ -22,7 +22,8 @@ class SecurityLogger:
                 )
             )
             self._logger.addHandler(handler)
-            self._logger.setLevel(logging.INFO)
+            resolved_level = getattr(logging, settings.server_log_level.upper(), logging.INFO)
+            self._logger.setLevel(resolved_level)
 
     def _log(
         self,
@@ -134,6 +135,11 @@ class SecurityLogger:
                 "github_backoff_max_seconds": settings.github_backoff_max_seconds,
                 "sync_concurrency": settings.sync_concurrency,
                 "sync_max_active_tasks": settings.sync_max_active_tasks,
+                "adaptive_sync_enabled": settings.adaptive_sync_enabled,
+                "adaptive_sync_max_concurrency": settings.adaptive_sync_max_concurrency,
+                "adaptive_sync_window_size": settings.adaptive_sync_window_size,
+                "adaptive_sync_high_ratio": settings.adaptive_sync_high_ratio,
+                "adaptive_sync_medium_ratio": settings.adaptive_sync_medium_ratio,
                 "server_log_level": settings.server_log_level,
                 "server_access_log": settings.server_access_log,
             },
@@ -230,6 +236,35 @@ class SecurityLogger:
             success=False,
             api_key=api_key,
             message=error,
+        )
+
+    def log_adaptive_sync(
+        self,
+        request_id: str,
+        *,
+        window_size: int,
+        rate_limited_events: int,
+        ratio: float,
+        concurrency_before: int,
+        concurrency_after: int,
+    ) -> None:
+        self._log(
+            event_type="adaptive_sync",
+            request_id=request_id,
+            client_ip="-",
+            success=True,
+            message=(
+                "Adaptive sync evaluated"
+                f": rate_limited_events={rate_limited_events}/{window_size}"
+                f", ratio={ratio:.2%}, concurrency={concurrency_before}->{concurrency_after}"
+            ),
+            extra={
+                "window_size": window_size,
+                "rate_limited_events": rate_limited_events,
+                "rate_limited_ratio": ratio,
+                "concurrency_before": concurrency_before,
+                "concurrency_after": concurrency_after,
+            },
         )
 
 
