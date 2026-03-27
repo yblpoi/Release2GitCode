@@ -14,7 +14,7 @@ from typing import AsyncIterator
 from release2gitcode.core.config import discover_default_assets, getenv_str, parse_multiline_files_env, settings
 from release2gitcode.core.github import get_release_info, parse_github_release_url
 from release2gitcode.core.gitcode import GitCodeReleaseClient, parse_gitcode_repo_url
-from release2gitcode.core.http import build_async_client
+from release2gitcode.core.http import build_async_client, sleep_for_github_backoff
 from release2gitcode.core.logger import get_security_logger
 from release2gitcode.core.models import GitHubAsset, LocalUploadConfig, SyncResult
 from release2gitcode.core.notifications import send_serverchan_notification
@@ -58,6 +58,13 @@ class ReleaseSyncService:
             failed_assets: list[str] = []
             progress_lock = Lock()
             semaphore = Semaphore(max(1, settings.sync_concurrency))
+            github_headers = {
+                "Accept": "application/octet-stream, */*",
+                "User-Agent": settings.github_download_user_agent,
+                "Connection": "keep-alive",
+            }
+            if GH_TOKEN:
+                github_headers["Authorization"] = f"Bearer {GH_TOKEN}"
 
             async def handle_asset(asset_index: int, asset: GitHubAsset) -> None:
                 nonlocal processed, skipped, total_bytes
@@ -84,6 +91,7 @@ class ReleaseSyncService:
                         tag=release_info.tag_name,
                         asset=asset,
                         task_id=task_id,
+                        github_headers=github_headers,
                     )
 
                 async with progress_lock:
@@ -173,15 +181,32 @@ class ReleaseSyncService:
         tag: str,
         asset: GitHubAsset,
         task_id: str,
+        github_headers: dict[str, str],
     ) -> bool:
         logger = get_security_logger()
 
         async def stream_factory() -> AsyncIterator[bytes]:
-            async with gitcode.client.stream("GET", asset.browser_download_url) as response:
+            response = None
+            for attempt in range(1, settings.github_max_retries + 1):
+                response = await gitcode.client.send(
+                    gitcode.client.build_request("GET", asset.browser_download_url, headers=github_headers),
+                    stream=True,
+                )
+                if response.status_code not in {403, 429} or attempt >= settings.github_max_retries:
+                    break
+                await response.aclose()
+                await sleep_for_github_backoff(response, attempt)
+
+            if response is None:
+                raise RuntimeError(f"Download failed for {asset.name}: empty response")
+
+            try:
                 if response.status_code >= 400:
                     raise RuntimeError(f"Download failed for {asset.name}: HTTP {response.status_code}")
                 async for chunk in response.aiter_bytes(chunk_size=settings.chunk_size):
                     yield chunk
+            finally:
+                await response.aclose()
 
         try:
             started_at = time.time()

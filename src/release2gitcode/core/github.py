@@ -7,7 +7,9 @@ from urllib.parse import urlparse
 import httpx
 
 from release2gitcode.core.errors import GitHubReleaseNotFound, InvalidGitHubURLError, NetworkError
+from release2gitcode.core.http import sleep_for_github_backoff
 from release2gitcode.core.models import GitHubAsset, GitHubReleaseInfo
+from release2gitcode.core.config import settings
 
 
 def parse_github_release_url(url: str) -> tuple[str, str, str]:
@@ -38,10 +40,20 @@ async def get_release_info(
     }
     if GH_TOKEN:
         headers["Authorization"] = f"Bearer {GH_TOKEN}"
-    try:
-        response = await client.get(url, headers=headers)
-    except httpx.RequestError as exc:
-        raise NetworkError(f"Failed to connect to GitHub API: {exc}") from exc
+    response: httpx.Response | None = None
+    for attempt in range(1, settings.github_max_retries + 1):
+        try:
+            response = await client.get(url, headers=headers)
+        except httpx.RequestError as exc:
+            if attempt >= settings.github_max_retries:
+                raise NetworkError(f"Failed to connect to GitHub API: {exc}") from exc
+            await sleep_for_github_backoff(httpx.Response(429), attempt)
+            continue
+        if response.status_code not in {403, 429} or attempt >= settings.github_max_retries:
+            break
+        await sleep_for_github_backoff(response, attempt)
+    if response is None:
+        raise NetworkError("Failed to connect to GitHub API")
 
     if response.status_code == 404:
         raise GitHubReleaseNotFound(owner, repo, tag)

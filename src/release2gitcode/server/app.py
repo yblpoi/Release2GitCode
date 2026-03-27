@@ -12,12 +12,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from release2gitcode.core.crypto import get_rsa_key_manager
+from release2gitcode.core.config import settings
 from release2gitcode.core.errors import AppError
 from release2gitcode.core.logger import get_security_logger
 from release2gitcode.core.models import GetPublicKeyResponse, SyncRequest, SyncResponse
 from release2gitcode.core.security import extract_api_key
 from release2gitcode.core.sync import ReleaseSyncService
 from release2gitcode.server.middleware import HTTPSCheckMiddleware
+
+active_sync_task_semaphore = asyncio.Semaphore(max(1, settings.sync_max_active_tasks))
 
 
 @asynccontextmanager
@@ -90,33 +93,34 @@ def create_app() -> FastAPI:
             raise
 
         async def run_sync_in_background() -> None:
-            try:
-                result = await sync_service.sync_github_release(
-                    github_release_url=github_url,
-                    gitcode_repo_url=gitcode_url,
-                    gitcode_token=gitcode_token,
-                    GH_TOKEN=GH_TOKEN,
-                    task_id=task_id,
-                    serverchan3_sendkey=sendkey,
-                )
-            except AppError as exc:
-                logger.log_sync_failed(task_id, client_ip, api_key, exc.message)
-                return
-            except Exception as exc:  # pragma: no cover - defensive logging
-                logger.log_sync_failed(task_id, client_ip, api_key, str(exc))
-                return
+            async with active_sync_task_semaphore:
+                try:
+                    result = await sync_service.sync_github_release(
+                        github_release_url=github_url,
+                        gitcode_repo_url=gitcode_url,
+                        gitcode_token=gitcode_token,
+                        GH_TOKEN=GH_TOKEN,
+                        task_id=task_id,
+                        serverchan3_sendkey=sendkey,
+                    )
+                except AppError as exc:
+                    logger.log_sync_failed(task_id, client_ip, api_key, exc.message)
+                    return
+                except Exception as exc:  # pragma: no cover - defensive logging
+                    logger.log_sync_failed(task_id, client_ip, api_key, str(exc))
+                    return
 
-            logger.log_sync_completed(
-                task_id,
-                client_ip,
-                api_key,
-                result.total_assets,
-                result.processed_assets,
-                result.skipped_assets,
-                len(result.failed_assets),
-                result.duration_seconds,
-                result.notification_warning,
-            )
+                logger.log_sync_completed(
+                    task_id,
+                    client_ip,
+                    api_key,
+                    result.total_assets,
+                    result.processed_assets,
+                    result.skipped_assets,
+                    len(result.failed_assets),
+                    result.duration_seconds,
+                    result.notification_warning,
+                )
 
         asyncio.create_task(run_sync_in_background())
         return SyncResponse(
