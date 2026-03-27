@@ -5,8 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pydantic import ConfigDict
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from release2gitcode.core.errors import ConfigurationError
 
@@ -34,7 +33,7 @@ class Settings(BaseSettings):
     sync_max_active_tasks: int = 2
     server_log_level: str = "info"
     server_access_log: bool = True
-    model_config = ConfigDict(env_prefix="", case_sensitive=False)
+    model_config = SettingsConfigDict(env_prefix="", case_sensitive=False)
 
 
 settings = Settings()

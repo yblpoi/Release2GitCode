@@ -41,15 +41,16 @@ async def get_release_info(
     if GH_TOKEN:
         headers["Authorization"] = f"Bearer {GH_TOKEN}"
     response: httpx.Response | None = None
-    for attempt in range(1, settings.github_max_retries + 1):
+    max_attempts = settings.github_max_retries + 1
+    for attempt in range(1, max_attempts + 1):
         try:
             response = await client.get(url, headers=headers)
         except httpx.RequestError as exc:
-            if attempt >= settings.github_max_retries:
+            if attempt >= max_attempts:
                 raise NetworkError(f"Failed to connect to GitHub API: {exc}") from exc
             await sleep_for_github_backoff(httpx.Response(429), attempt)
             continue
-        if response.status_code not in {403, 429} or attempt >= settings.github_max_retries:
+        if response.status_code not in {403, 429} or attempt >= max_attempts:
             break
         await sleep_for_github_backoff(response, attempt)
     if response is None:
