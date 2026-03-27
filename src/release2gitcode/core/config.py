@@ -5,8 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pydantic import ConfigDict
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from release2gitcode.core.errors import ConfigurationError
 
@@ -18,18 +17,23 @@ class Settings(BaseSettings):
     api_key_hash: str = ""
     api_key_length: int = 64
     github_api_base: str = "https://api.github.com"
+    github_download_user_agent: str = "Release2GitCode/3.0 (github-release-sync)"
     gitcode_api_base: str = "https://api.gitcode.com/api/v5"
     chunk_size: int = 1024 * 1024
     max_file_size: int = 10 * 1024 * 1024 * 1024
     upload_attempts: int = 5
+    github_max_retries: int = 5
     http_timeout_seconds: float = 30.0
-    http_max_connections: int = 100
+    http_max_connections: int = 20
     http_max_keepalive_connections: int = 20
     retry_delay_seconds: float = 1.0
+    github_backoff_base_seconds: float = 1.0
+    github_backoff_max_seconds: float = 60.0
     sync_concurrency: int = 3
+    sync_max_active_tasks: int = 2
     server_log_level: str = "info"
     server_access_log: bool = True
-    model_config = ConfigDict(env_prefix="", case_sensitive=False)
+    model_config = SettingsConfigDict(env_prefix="", case_sensitive=False)
 
 
 settings = Settings()
