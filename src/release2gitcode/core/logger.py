@@ -228,14 +228,23 @@ class SecurityLogger:
             },
         )
 
-    def log_sync_failed(self, request_id: str, client_ip: str, api_key: str, error: str) -> None:
+    def log_sync_failed(
+        self,
+        request_id: str,
+        client_ip: str,
+        api_key: str,
+        error: str | None = None,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        message = reason if reason is not None else (error or "")
         self._log(
             event_type="sync_failed",
             request_id=request_id,
             client_ip=client_ip,
             success=False,
             api_key=api_key,
-            message=error,
+            message=message,
         )
 
     def log_adaptive_sync(
