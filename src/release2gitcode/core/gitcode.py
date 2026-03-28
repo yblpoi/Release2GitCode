@@ -19,6 +19,13 @@ from release2gitcode.core.models import GitCodeRepoRef, GitHubAsset
 logger = logging.getLogger(__name__)
 
 
+def _format_request_error(exc: httpx.RequestError) -> str:
+    request = exc.request
+    method = request.method if request is not None else "unknown"
+    url = str(request.url) if request is not None else "unknown"
+    return f"{type(exc).__name__}: {repr(exc)} request_method={method} request_url={url}"
+
+
 class RawUploadStream:
     """Async stream wrapper for raw uploads with deterministic total length when available."""
 
@@ -308,7 +315,8 @@ class GitCodeReleaseClient:
             except httpx.RequestError as exc:
                 if attempt == upload_attempts:
                     raise NetworkError(
-                        f"Upload failed for {asset.name}: method={method} file_field_name={file_field_name} error={exc}"
+                        f"Upload failed for {asset.name}: method={method} file_field_name={file_field_name} "
+                        f"error={_format_request_error(exc)}"
                     ) from exc
                 await asyncio.sleep(settings.retry_delay_seconds)
                 continue
