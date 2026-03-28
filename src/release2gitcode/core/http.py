@@ -16,7 +16,13 @@ def build_async_client() -> httpx.AsyncClient:
         max_connections=settings.http_max_connections,
         max_keepalive_connections=settings.http_max_keepalive_connections,
     )
-    timeout = httpx.Timeout(settings.http_timeout_seconds)
+    timeout = httpx.Timeout(
+        timeout=settings.http_timeout_seconds,
+        connect=settings.http_connect_timeout_seconds,
+        read=settings.http_read_timeout_seconds,
+        write=settings.http_write_timeout_seconds,
+        pool=settings.http_pool_timeout_seconds,
+    )
     return httpx.AsyncClient(limits=limits, timeout=timeout, follow_redirects=True)
 
 

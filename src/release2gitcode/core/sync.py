@@ -89,6 +89,11 @@ class ReleaseSyncService:
             progress_lock = Lock()
             max_sync_concurrency = max(1, settings.sync_concurrency)
             adaptive_upper_bound = max(1, settings.adaptive_sync_max_concurrency)
+            has_large_assets = any(asset.size >= settings.large_file_size_threshold_bytes for asset in release_info.assets)
+            if has_large_assets:
+                large_file_cap = max(1, settings.large_file_sync_concurrency)
+                max_sync_concurrency = min(max_sync_concurrency, large_file_cap)
+                adaptive_upper_bound = min(adaptive_upper_bound, large_file_cap)
             initial_concurrency = min(max_sync_concurrency, adaptive_upper_bound)
             limiter = AdaptiveConcurrencyLimiter(initial_concurrency)
             adaptive_window: deque[bool] = deque(maxlen=max(1, settings.adaptive_sync_window_size))
@@ -101,12 +106,12 @@ class ReleaseSyncService:
             if GH_TOKEN:
                 github_headers["Authorization"] = f"Bearer {GH_TOKEN}"
 
-            async def update_adaptive_concurrency(rate_limited: bool) -> None:
+            async def update_adaptive_concurrency(adaptive_signal: bool) -> None:
                 if not settings.adaptive_sync_enabled:
                     return
 
                 async with adaptive_lock:
-                    adaptive_window.append(rate_limited)
+                    adaptive_window.append(adaptive_signal)
                     rate_limited_events = sum(1 for flagged in adaptive_window if flagged)
                     ratio = rate_limited_events / len(adaptive_window)
                     current_target = limiter.target
@@ -150,7 +155,7 @@ class ReleaseSyncService:
 
                 await limiter.acquire()
                 try:
-                    uploaded, rate_limited = await self._upload_github_asset(
+                    uploaded, adaptive_signal = await self._upload_github_asset(
                         gitcode=gitcode,
                         tag=release_info.tag_name,
                         asset=asset,
@@ -160,7 +165,7 @@ class ReleaseSyncService:
                 finally:
                     await limiter.release()
 
-                await update_adaptive_concurrency(rate_limited)
+                await update_adaptive_concurrency(adaptive_signal)
 
                 async with progress_lock:
                     if uploaded:
@@ -305,9 +310,11 @@ class ReleaseSyncService:
                 task_id,
                 client_ip="-",
                 api_key="",
-                reason=f"Asset upload failed: {asset.name}; reason={exc}",
+                reason=(
+                    f"Asset upload failed: {asset.name}; reason={type(exc).__name__}: {repr(exc)}"
+                ),
             )
-            return False, rate_limited
+            return False, True
 
     @staticmethod
     def _log_progress(
