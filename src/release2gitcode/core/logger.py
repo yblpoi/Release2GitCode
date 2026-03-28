@@ -276,6 +276,35 @@ class SecurityLogger:
             },
         )
 
+    def log_adaptive_sync(
+        self,
+        request_id: str,
+        *,
+        window_size: int,
+        rate_limited_events: int,
+        ratio: float,
+        concurrency_before: int,
+        concurrency_after: int,
+    ) -> None:
+        self._log(
+            event_type="adaptive_sync",
+            request_id=request_id,
+            client_ip="-",
+            success=True,
+            message=(
+                "Adaptive sync evaluated"
+                f": rate_limited_events={rate_limited_events}/{window_size}"
+                f", ratio={ratio:.2%}, concurrency={concurrency_before}->{concurrency_after}"
+            ),
+            extra={
+                "window_size": window_size,
+                "rate_limited_events": rate_limited_events,
+                "rate_limited_ratio": ratio,
+                "concurrency_before": concurrency_before,
+                "concurrency_after": concurrency_after,
+            },
+        )
+
 
 _logger: SecurityLogger | None = None
 
