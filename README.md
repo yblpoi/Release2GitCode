@@ -281,12 +281,23 @@ Store it securely before restarting:
 | `UPLOAD_ATTEMPTS` | 否 | `5` | Core | 上传重试次数 |
 | `GITHUB_MAX_RETRIES` | 否 | `5` | Core | GitHub API/下载限流时的最大重试次数 |
 | `HTTP_TIMEOUT_SECONDS` | 否 | `30.0` | Core | 默认 HTTP 超时 |
+| `HTTP_CONNECT_TIMEOUT_SECONDS` | 否 | `30.0` | Core | HTTP 连接阶段超时 |
+| `HTTP_READ_TIMEOUT_SECONDS` | 否 | `120.0` | Core | HTTP 读取阶段超时（流式下载/上传常用） |
+| `HTTP_WRITE_TIMEOUT_SECONDS` | 否 | `120.0` | Core | HTTP 写入阶段超时 |
+| `HTTP_POOL_TIMEOUT_SECONDS` | 否 | `30.0` | Core | 连接池等待超时 |
 | `HTTP_MAX_CONNECTIONS` | 否 | `20` | Core | 连接池最大连接数 |
 | `HTTP_MAX_KEEPALIVE_CONNECTIONS` | 否 | `20` | Core | Keep-alive 连接数 |
 | `RETRY_DELAY_SECONDS` | 否 | `1.0` | Core | 重试等待秒数 |
 | `GITHUB_BACKOFF_BASE_SECONDS` | 否 | `1.0` | Core | GitHub 限流指数退避起始秒数 |
 | `GITHUB_BACKOFF_MAX_SECONDS` | 否 | `60.0` | Core | GitHub 限流指数退避最大秒数 |
 | `SYNC_CONCURRENCY` | 否 | `3` | Core | GitHub 资源并发同步数（用于提升总吞吐） |
+| `LARGE_FILE_SIZE_THRESHOLD_BYTES` | 否 | `314572800` | Core | 大文件阈值（默认 300MB） |
+| `LARGE_FILE_SYNC_CONCURRENCY` | 否 | `2` | Core | 大文件并发上限（仅约束大文件任务，不影响小文件并发） |
+| `ADAPTIVE_SYNC_ENABLED` | 否 | `true` | Core | 是否启用自适应并发调节 |
+| `ADAPTIVE_SYNC_MAX_CONCURRENCY` | 否 | `3` | Core | 自适应并发上限 |
+| `ADAPTIVE_SYNC_WINDOW_SIZE` | 否 | `10` | Core | 自适应并发判定窗口大小 |
+| `ADAPTIVE_SYNC_HIGH_RATIO` | 否 | `0.2` | Core | 限流信号比例达到该阈值时降到最低并发 |
+| `ADAPTIVE_SYNC_MEDIUM_RATIO` | 否 | `0.1` | Core | 限流信号比例达到该阈值时降到中等并发 |
 | `SYNC_MAX_ACTIVE_TASKS` | 否 | `2` | Server | 服务端可同时执行的同步任务数（全局限流） |
 | `SERVER_LOG_LEVEL` | 否 | `info` | Server | Uvicorn 日志等级 |
 | `SERVER_ACCESS_LOG` | 否 | `true` | Server | 是否输出 Uvicorn Access Log |
@@ -296,6 +307,8 @@ Store it securely before restarting:
 - `ServerChan3 SendKey` 不在服务端长期保存。
 - `ServerChan3 SendKey` 如果需要，只通过每次 `/api/v1/sync` 请求中的加密字段传入。
 - 服务端仅持久化 `API_KEY_HASH` 到 `/data/api_key_hash`。
+- `LARGE_FILE_SYNC_CONCURRENCY` 仅限制“大文件任务”，不会整体压低 `SYNC_CONCURRENCY`。
+- 自适应并发只基于 GitHub 限流信号（403/429）进行降并发，不会因普通上传失败误判。
 
 ## `/api/v1/sync` 请求体
 

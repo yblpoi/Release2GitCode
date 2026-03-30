@@ -89,15 +89,13 @@ class ReleaseSyncService:
             progress_lock = Lock()
             max_sync_concurrency = max(1, settings.sync_concurrency)
             adaptive_upper_bound = max(1, settings.adaptive_sync_max_concurrency)
-            has_large_assets = any(asset.size >= settings.large_file_size_threshold_bytes for asset in release_info.assets)
-            if has_large_assets:
-                large_file_cap = max(1, settings.large_file_sync_concurrency)
-                max_sync_concurrency = min(max_sync_concurrency, large_file_cap)
-                adaptive_upper_bound = min(adaptive_upper_bound, large_file_cap)
             initial_concurrency = min(max_sync_concurrency, adaptive_upper_bound)
             limiter = AdaptiveConcurrencyLimiter(initial_concurrency)
             adaptive_window: deque[bool] = deque(maxlen=max(1, settings.adaptive_sync_window_size))
             adaptive_lock = Lock()
+            large_file_threshold = max(0, settings.large_file_size_threshold_bytes)
+            large_file_cap = max(1, settings.large_file_sync_concurrency)
+            large_file_limiter = asyncio.Semaphore(large_file_cap)
             github_headers = {
                 "Accept": "application/octet-stream, */*",
                 "User-Agent": settings.github_download_user_agent,
@@ -153,8 +151,11 @@ class ReleaseSyncService:
                         )
                     return
 
+                is_large_file = asset.size >= large_file_threshold
                 await limiter.acquire()
                 try:
+                    if is_large_file:
+                        await large_file_limiter.acquire()
                     uploaded, adaptive_signal = await self._upload_github_asset(
                         gitcode=gitcode,
                         tag=release_info.tag_name,
@@ -163,6 +164,8 @@ class ReleaseSyncService:
                         github_headers=github_headers,
                     )
                 finally:
+                    if is_large_file:
+                        large_file_limiter.release()
                     await limiter.release()
 
                 await update_adaptive_concurrency(adaptive_signal)
@@ -314,7 +317,8 @@ class ReleaseSyncService:
                     f"Asset upload failed: {asset.name}; reason={type(exc).__name__}: {repr(exc)}"
                 ),
             )
-            return False, True
+            # Only use rate-limit detections (403/429) as adaptive downshift signal.
+            return False, rate_limited
 
     @staticmethod
     def _log_progress(
